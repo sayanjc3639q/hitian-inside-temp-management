@@ -465,13 +465,15 @@ function LoginScreen({ onLogin }) {
 
 function VerificationScreen({ user, userData, onRefresh }) {
   const [name, setName] = useState('')
+  const [roll, setRoll] = useState('')
+  const [year, setYear] = useState('1st Year')
   const [domain, setDomain] = useState('')
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!name || !domain || isSubmitting) return
+    if (!name || !roll || !domain || isSubmitting) return
     
     setIsSubmitting(true)
     try {
@@ -479,6 +481,8 @@ function VerificationScreen({ user, userData, onRefresh }) {
         uid: user.uid,
         email: user.email,
         name: name,
+        roll: roll,
+        year: year,
         domain: domain,
         role: 'member',
         status: 'pending',
@@ -532,6 +536,34 @@ function VerificationScreen({ user, userData, onRefresh }) {
               required
             />
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <label className="role-label">ROLL NUMBER</label>
+              <input 
+                type="text" 
+                placeholder="e.g. 12300..." 
+                className="input-field" 
+                value={roll}
+                onChange={(e) => setRoll(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="role-label">ACADEMIC YEAR</label>
+              <select 
+                className="select-field" 
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                required
+              >
+                <option>1st Year</option>
+                <option>2nd Year</option>
+                <option>3rd Year</option>
+                <option>4th Year</option>
+              </select>
+            </div>
+          </div>
+
           <div style={{ marginBottom: '1.5rem' }}>
             <label className="role-label">DOMAIN / DEPARTMENT</label>
             <select 
@@ -602,10 +634,10 @@ function UserVerificationView({ onAddStudent }) {
           // Auto-create student record
           if (onAddStudent) {
             await onAddStudent({
-              name: userToVerify.name,
-              roll: userToVerify.roll,
-              domain: userToVerify.domain,
-              year: userToVerify.year,
+              name: userToVerify.name || 'Unknown User',
+              roll: userToVerify.roll || 'NOT SET',
+              domain: userToVerify.domain || 'Photography',
+              year: userToVerify.year || '1st Year',
               availability: 'Operational',
               statusNote: 'Automatically verified from registration'
             })
