@@ -404,6 +404,10 @@ function App() {
               />
             </>
           )}
+        </nav>
+
+        <nav className="sidebar-nav" style={{ marginTop: 'auto', borderTop: '1px solid var(--maroon-light)', paddingTop: '1rem' }}>
+          <div style={{ padding: '0 1rem 0.5rem 1rem', fontSize: '0.65rem', fontWeight: 800, color: '#ffbaba', letterSpacing: '0.1em' }}>ACCOUNT & SYSTEM</div>
           <NavItem 
             icon={<UserCircle size={20} />} 
             label="PROFILE" 
@@ -417,18 +421,21 @@ function App() {
             icon={<Bell size={20} />} 
             label="NOTIFICATIONS" 
             active={false} 
-            onClick={() => alert("No new notifications")} 
+            onClick={() => {
+              alert("No new notifications")
+              setIsMenuOpen(false)
+            }} 
           />
         </nav>
 
-        <div className="sidebar-footer" style={{ marginTop: 'auto', borderTop: '1px solid var(--maroon-light)', paddingTop: '1rem' }}>
+        <div className="sidebar-footer" style={{ borderTop: '1px solid var(--maroon-light)', paddingTop: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', padding: '0 0.5rem' }}>
             <div style={{ width: '32px', height: '32px', background: 'var(--cream)', color: 'var(--maroon)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
-              {userData.name[0]}
+              {userData.name ? userData.name[0].toUpperCase() : 'U'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <p style={{ fontWeight: 700, fontSize: '0.8rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{userData.name}</p>
-              <p style={{ fontSize: '0.65rem', color: '#ffbaba', fontWeight: 600 }}>{userData.role.toUpperCase()}</p>
+              <p style={{ fontWeight: 700, fontSize: '0.8rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{userData.name || 'User'}</p>
+              <p style={{ fontSize: '0.65rem', color: '#ffbaba', fontWeight: 600 }}>{userData.role?.toUpperCase() || 'MEMBER'}</p>
             </div>
           </div>
           <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>
@@ -510,12 +517,10 @@ function VerificationScreen({ user, userData, onRefresh }) {
       const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', user.email))
       const whitelistSnap = await getDocs(whitelistQuery)
       
-      if (whitelistSnap.empty) {
-        alert("ACCESS DENIED: Your email is not on the official whitelist. Please contact the administrator to be invited.")
-        setIsSubmitting(false)
-        return
-      }
+      const isWhitelisted = !whitelistSnap.empty
+      const initialStatus = isWhitelisted ? 'verified' : 'pending'
 
+      // 2. Create User Profile
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         email: user.email,
@@ -524,13 +529,35 @@ function VerificationScreen({ user, userData, onRefresh }) {
         year: year,
         domain: domain,
         role: 'member',
-        status: 'pending',
+        status: initialStatus,
         createdAt: new Date().toISOString()
       })
-      setIsSubmitted(true)
+
+      // 3. If whitelisted, auto-create student record for assignments
+      if (isWhitelisted) {
+        // Check if student record already exists
+        const studentQuery = query(collection(db, 'students'), where('roll', '==', roll))
+        const studentSnap = await getDocs(studentQuery)
+        
+        if (studentSnap.empty) {
+          await addDoc(collection(db, 'students'), {
+            name: name,
+            roll: roll,
+            domain: domain,
+            year: year,
+            availability: 'Operational',
+            statusNote: 'Auto-verified via Whitelist'
+          })
+        }
+        
+        // Refresh app state to enter dashboard
+        onRefresh()
+      } else {
+        setIsSubmitted(true)
+      }
     } catch (error) {
       console.error("Verification submission failed:", error)
-      alert("Failed to submit request. Please check your internet connection and try again.")
+      alert("Failed to submit request. Please check your internet connection.")
     } finally {
       setIsSubmitting(false)
     }
@@ -545,7 +572,7 @@ function VerificationScreen({ user, userData, onRefresh }) {
           <p>Request submitted for {user.email}</p>
           <div style={{ padding: '1rem', border: '1px solid var(--maroon)', margin: '1.5rem 0', background: 'var(--cream-dark)' }}>
             <p style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-              Your account is awaiting approval from Superadmin (Sayan Maity).
+              Your account is awaiting approval from Admin.
               Please contact the development team if this takes more than 24 hours.
             </p>
           </div>
@@ -1167,10 +1194,12 @@ function EventsView({ events, students, onAddEvent, onUpdateEvent, onDeleteEvent
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
   const isSuperadmin = user?.role === 'superadmin'
 
-  // Members only see events they are assigned to
-  const filteredEvents = isAdmin ? events : events.filter(event => 
-    event.assignments && Object.values(event.assignments).includes(user?.name)
-  )
+  // Members only see events they are assigned to (Primary or Backup)
+  const filteredEvents = isAdmin ? events : events.filter(event => {
+    const isPrimary = event.assignments && Object.values(event.assignments).includes(user?.name);
+    const isBackup = event.backups && Object.values(event.backups).some(arr => Array.isArray(arr) && arr.includes(user?.name));
+    return isPrimary || isBackup;
+  })
 
   return (
     <div>
@@ -1320,6 +1349,15 @@ function ManageEventModal({ event, students, events, onClose, onUpdate, isAdmin 
     webDev: 'Unassigned'
   }
 
+  const backups = localEvent.backups || {
+    photographer: [],
+    contentWriter: [],
+    pr: [],
+    videoEditor: [],
+    graphicDesigner: [],
+    webDev: []
+  }
+
   const checklist = localEvent.checklist || {
     membersAssigned: false,
     photosSorted: false,
@@ -1352,6 +1390,22 @@ function ManageEventModal({ event, students, events, onClose, onUpdate, isAdmin 
     const allAssigned = Object.values(updatedEventData.assignments).every(val => val !== 'Unassigned')
     updatedEventData.checklist = { ...checklist, membersAssigned: allAssigned }
     setLocalEvent(updatedEventData)
+  }
+
+  const toggleBackup = (role, name) => {
+    if (readOnly) return
+    const currentBackups = backups[role] || []
+    const newBackups = currentBackups.includes(name)
+      ? currentBackups.filter(n => n !== name)
+      : [...currentBackups, name]
+    
+    setLocalEvent({
+      ...localEvent,
+      backups: {
+        ...backups,
+        [role]: newBackups
+      }
+    })
   }
 
   const handleCommitChanges = async () => {
@@ -1389,54 +1443,66 @@ function ManageEventModal({ event, students, events, onClose, onUpdate, isAdmin 
                 role="Photographer" 
                 domain="Photography"
                 value={assignments.photographer} 
+                backups={backups.photographer}
                 students={students} 
                 events={events}
                 onSelect={(val) => setAssignee('photographer', val)} 
+                onToggleBackup={(val) => toggleBackup('photographer', val)}
                 readOnly={readOnly || !isAdmin}
               />
               <AssignmentSelector 
                 role="Content Writer" 
                 domain="Content Writing"
                 value={assignments.contentWriter} 
+                backups={backups.contentWriter}
                 students={students} 
                 events={events}
                 onSelect={(val) => setAssignee('contentWriter', val)} 
+                onToggleBackup={(val) => toggleBackup('contentWriter', val)}
                 readOnly={readOnly || !isAdmin}
               />
               <AssignmentSelector 
                 role="PR & Outreach" 
                 domain="PR & Outreach"
                 value={assignments.pr} 
+                backups={backups.pr}
                 students={students} 
                 events={events}
                 onSelect={(val) => setAssignee('pr', val)} 
+                onToggleBackup={(val) => toggleBackup('pr', val)}
                 readOnly={readOnly || !isAdmin}
               />
               <AssignmentSelector 
                 role="Video Editor" 
                 domain="Video Editing"
                 value={assignments.videoEditor} 
+                backups={backups.videoEditor}
                 students={students} 
                 events={events}
                 onSelect={(val) => setAssignee('videoEditor', val)} 
+                onToggleBackup={(val) => toggleBackup('videoEditor', val)}
                 readOnly={readOnly || !isAdmin}
               />
               <AssignmentSelector 
                 role="Graphic Designer" 
                 domain="Graphic Design"
                 value={assignments.graphicDesigner} 
+                backups={backups.graphicDesigner}
                 students={students} 
                 events={events}
                 onSelect={(val) => setAssignee('graphicDesigner', val)} 
+                onToggleBackup={(val) => toggleBackup('graphicDesigner', val)}
                 readOnly={readOnly || !isAdmin}
               />
               <AssignmentSelector 
                 role="Web Developer" 
                 domain="Web/App Developer"
                 value={assignments.webDev} 
+                backups={backups.webDev}
                 students={students} 
                 events={events}
                 onSelect={(val) => setAssignee('webDev', val)} 
+                onToggleBackup={(val) => toggleBackup('webDev', val)}
                 readOnly={readOnly || !isAdmin}
               />
             </div>
@@ -1479,43 +1545,67 @@ function ManageEventModal({ event, students, events, onClose, onUpdate, isAdmin 
   )
 }
 
-function AssignmentSelector({ role, domain, value, students, events, onSelect, readOnly }) {
-  // Filter students based on the domain required for the role
+function AssignmentSelector({ role, domain, value, backups = [], students, events, onSelect, onToggleBackup, readOnly }) {
   const filteredStudents = students.filter(s => s.domain === domain)
-
+  
   return (
-    <div className="assignment-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ flex: 1 }}>
-        <div className="role-label">{role}</div>
-        <div style={{ fontSize: '0.7rem', color: '#666', fontWeight: 600 }}>REQ DOMAIN: {domain}</div>
+    <div className="assignment-item" style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #ddd' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h4 style={{ fontSize: '0.8rem', color: '#666', textTransform: 'uppercase' }}>{role}</h4>
+        <span style={{ fontSize: '0.7rem', background: '#eee', padding: '2px 6px', borderRadius: '4px' }}>{domain}</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--maroon)', display: 'block', marginBottom: '0.5rem' }}>PRIMARY ASSIGNMENT</label>
         <select 
           className="select-field" 
-          style={{ width: '250px' }}
-          value={value}
+          value={value} 
           onChange={(e) => onSelect(e.target.value)}
           disabled={readOnly}
+          style={{ width: '100%', border: value === 'Unassigned' ? '2px dashed #ccc' : '1px solid #000' }}
         >
-          <option>Unassigned</option>
+          <option value="Unassigned">Unassigned</option>
           {filteredStudents.map(s => {
-            const pendingCount = events.filter(e => 
-              !e.checklist.postDone && Object.values(e.assignments).includes(s.name)
-            ).length;
-            const isAvailable = !s.availability || s.availability === 'Operational';
-            
+            const pendingCount = events.filter(e => !e.checklist.postDone && Object.values(e.assignments).includes(s.name)).length
+            const isAvailable = s.availability === 'AVAILABLE'
             return (
               <option key={s.id} value={s.name}>
-                {s.name} ({pendingCount} Task{pendingCount !== 1 ? 's' : ''}) {!isAvailable ? `[${s.availability}]` : ''}
+                {s.name} ({pendingCount} Active) {!isAvailable ? `[${s.availability}]` : ''}
               </option>
             )
           })}
         </select>
-        {value !== 'Unassigned' && (
-          <div style={{ color: 'var(--maroon)' }}>
-            <WorkloadBadge studentName={value} events={events} showIcon />
-          </div>
-        )}
+      </div>
+
+      <div>
+        <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--maroon)', display: 'block', marginBottom: '0.5rem' }}>BACKUP / SUPPORT (MULTI-SELECT)</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {filteredStudents.map(s => {
+            const isAssignedAsPrimary = value === s.name
+            if (isAssignedAsPrimary) return null
+            const isBackup = backups.includes(s.name)
+            return (
+              <button
+                key={s.id}
+                onClick={() => onToggleBackup(s.name)}
+                disabled={readOnly}
+                type="button"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  border: isBackup ? '1px solid var(--maroon)' : '1px solid #ddd',
+                  background: isBackup ? 'var(--maroon)' : 'white',
+                  color: isBackup ? 'white' : '#666',
+                  cursor: readOnly ? 'default' : 'pointer'
+                }}
+              >
+                {s.name}
+              </button>
+            )
+          })}
+          {filteredStudents.length === 0 && <p style={{ fontSize: '0.7rem', color: '#999' }}>No students found in this domain.</p>}
+        </div>
       </div>
     </div>
   )
@@ -1749,11 +1839,13 @@ function PerformanceSheet({ students, events }) {
   });
 
   const memberStats = students.map(student => {
-    const studentEvents = filteredEvents.filter(event => 
-      Object.values(event.assignments).includes(student.name)
-    );
+    const studentEvents = filteredEvents.filter(event => {
+      const isPrimary = event.assignments && Object.values(event.assignments).includes(student.name);
+      const isBackup = event.backups && Object.values(event.backups).some(arr => Array.isArray(arr) && arr.includes(student.name));
+      return isPrimary || isBackup;
+    });
     
-    const completedTasks = studentEvents.filter(event => event.checklist.postDone).length;
+    const completedTasks = studentEvents.filter(event => event.checklist?.postDone).length;
     const pendingTasks = studentEvents.length - completedTasks;
 
     return {
