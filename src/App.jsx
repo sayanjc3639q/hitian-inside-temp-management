@@ -432,12 +432,9 @@ function App() {
             </div>
           </div>
           <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-              <span>CAPACITY (MAX 60)</span>
-              <span style={{ color: students.length >= 60 ? 'var(--maroon)' : 'var(--cream)' }}>{students.length}/60</span>
-            </div>
+            <p style={{ marginBottom: '0.5rem' }}>FIREBASE CLOUD ACTIVE</p>
             <div className="progress-container" style={{ height: '8px', background: 'var(--maroon-light)', borderRadius: '0' }}>
-              <div style={{ width: `${(students.length / 60) * 100}%`, height: '100%', background: students.length >= 60 ? 'var(--maroon)' : 'var(--cream)' }}></div>
+              <div style={{ width: '100%', height: '100%', background: 'var(--cream)' }}></div>
             </div>
           </div>
         </div>
@@ -509,15 +506,7 @@ function VerificationScreen({ user, userData, onRefresh }) {
     
     setIsSubmitting(true)
     try {
-      // 1. Check Capacity first
-      const studentSnap = await getDocs(collection(db, 'students'))
-      if (studentSnap.size >= 60) {
-        alert("SYSTEM CAPACITY REACHED (60/60). New registrations are currently suspended.")
-        setIsSubmitting(false)
-        return
-      }
-
-      // 2. Check Whitelist
+      // 1. Check Whitelist
       const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', user.email))
       const whitelistSnap = await getDocs(whitelistQuery)
       
