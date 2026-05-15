@@ -113,15 +113,26 @@ h1, h2, h3 {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2rem;
+  padding: 0 2rem 2rem 2rem;
   background: var(--cream);
-  scrollbar-gutter: stable; /* Fixes layout jump when scrollbar appears */
+  scrollbar-gutter: stable; 
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Prevent background scroll when modal is open */
-.main-content:has(.modal-overlay) {
-  overflow-y: hidden;
+.main-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--cream);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--maroon);
+  padding: 1.5rem 0 1rem 0;
+  gap: 1rem;
 }
 
 .page-header {
@@ -523,9 +534,20 @@ h1, h2, h3 {
   }
 
   .main-content {
-    padding: 1rem;
+    padding: 0 1rem 1rem 1rem;
     height: 100vh;
     overflow-y: auto;
+  }
+
+  .main-header {
+    padding: 1rem 0;
+    margin-bottom: 1rem;
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+
+  .main-header .header-right {
+    display: none !important;
   }
 
   .page-title {
@@ -567,18 +589,8 @@ h1, h2, h3 {
     width: 100% !important;
   }
 
-  header {
-    flex-direction: column;
-    gap: 1rem;
-    align-items: flex-start !important;
-  }
-
-  header > div {
-    width: 100%;
-  }
-
-  header input {
-    width: 100% !important;
+  .main-header div[style*="position: relative"] {
+    display: none; /* Hide search on mobile header to keep it clean */
   }
 
   .menu-toggle {
@@ -636,6 +648,19 @@ h1, h2, h3 {
   div[style*="display: grid"][style*="grid-template-columns: 1.5fr 1fr"] {
     grid-template-columns: 1fr !important;
   }
+}
+
+.progress-container {
+  width: 100%;
+  border: 1px solid var(--maroon-light);
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .header-right {
+    display: none !important;
+  }
+  /* ... existing styles ... */
 }
 
 @media (min-width: 769px) {

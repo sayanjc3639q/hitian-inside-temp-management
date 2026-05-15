@@ -100,11 +100,18 @@ function App() {
               statusNote: 'System Superadmin'
             })
           } else {
-            // Update name if it was previously set incorrectly (e.g. Sayan Das)
+            // Update name if it was previously set incorrectly
             const existingDoc = studentSnap.docs[0]
             if (existingDoc.data().name !== 'Sayan Maity') {
               await updateDoc(doc(db, 'students', existingDoc.id), { name: 'Sayan Maity' })
             }
+          }
+          
+          // Ensure superadmin is also on the whitelist
+          const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', 'jcsayan7@gmail.com'))
+          const whitelistSnap = await getDocs(whitelistQuery)
+          if (whitelistSnap.empty) {
+            await addDoc(collection(db, 'whitelist'), { email: 'jcsayan7@gmail.com', addedAt: new Date().toISOString() })
           }
         }
       } else if (authUser.email === 'jcsayan7@gmail.com') {
@@ -132,6 +139,9 @@ function App() {
             statusNote: 'System Superadmin'
           })
         }
+        
+        // Add to whitelist
+        await addDoc(collection(db, 'whitelist'), { email: 'jcsayan7@gmail.com', addedAt: new Date().toISOString() })
 
         setUserData(newAdmin)
       } else {
@@ -140,7 +150,6 @@ function App() {
       }
     } catch (error) {
       console.error("Error fetching user data:", error)
-      // If we can't fetch data, we should at least let the user try to re-link or see the form
       setUserData({ status: 'new' })
     }
   }
@@ -293,6 +302,10 @@ function App() {
         return isAdmin ? <PerformanceSheet students={students} events={events} /> : <NoAccessView />
       case 'users':
         return isSuperadmin ? <UserVerificationView onAddStudent={addStudent} /> : <NoAccessView />
+      case 'whitelist':
+        return (
+          <WhitelistManagementView />
+        )
       case 'profile':
         return (
           <ProfileView 
@@ -370,15 +383,26 @@ function App() {
             />
           )}
           {isSuperadmin && (
-            <NavItem 
-              icon={<ShieldCheck size={20} />} 
-              label="VERIFY USERS" 
-              active={activeTab === 'users'} 
-              onClick={() => {
-                setActiveTab('users')
-                setIsMenuOpen(false)
-              }} 
-            />
+            <>
+              <NavItem 
+                icon={<ShieldCheck size={20} />} 
+                label="VERIFY USERS" 
+                active={activeTab === 'users'} 
+                onClick={() => {
+                  setActiveTab('users')
+                  setIsMenuOpen(false)
+                }} 
+              />
+              <NavItem 
+                icon={<Lock size={20} />} 
+                label="WHITELIST" 
+                active={activeTab === 'whitelist'} 
+                onClick={() => {
+                  setActiveTab('whitelist')
+                  setIsMenuOpen(false)
+                }} 
+              />
+            </>
           )}
           <NavItem 
             icon={<UserCircle size={20} />} 
@@ -389,25 +413,41 @@ function App() {
               setIsMenuOpen(false)
             }} 
           />
+          <NavItem 
+            icon={<Bell size={20} />} 
+            label="NOTIFICATIONS" 
+            active={false} 
+            onClick={() => alert("No new notifications")} 
+          />
         </nav>
 
         <div className="sidebar-footer" style={{ marginTop: 'auto', borderTop: '1px solid var(--maroon-light)', paddingTop: '1rem' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>
-            <p style={{ marginBottom: '0.5rem' }}>FIREBASE CLOUD ACTIVE</p>
-            <div className="progress-container" style={{ height: '8px', background: 'var(--maroon-light)' }}>
-              <div style={{ width: '100%', height: '100%', background: 'var(--cream)' }}></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', padding: '0 0.5rem' }}>
+            <div style={{ width: '32px', height: '32px', background: 'var(--cream)', color: 'var(--maroon)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+              {userData.name[0]}
             </div>
-            <p style={{ marginTop: '0.5rem' }}>SECURE SESSION: {user.email.split('@')[0].toUpperCase()}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <p style={{ fontWeight: 700, fontSize: '0.8rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{userData.name}</p>
+              <p style={{ fontSize: '0.65rem', color: '#ffbaba', fontWeight: 600 }}>{userData.role.toUpperCase()}</p>
+            </div>
+          </div>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <span>CAPACITY (MAX 60)</span>
+              <span style={{ color: students.length >= 60 ? 'var(--maroon)' : 'var(--cream)' }}>{students.length}/60</span>
+            </div>
+            <div className="progress-container" style={{ height: '8px', background: 'var(--maroon-light)', borderRadius: '0' }}>
+              <div style={{ width: `${(students.length / 60) * 100}%`, height: '100%', background: students.length >= 60 ? 'var(--maroon)' : 'var(--cream)' }}></div>
+            </div>
           </div>
         </div>
       </aside>
 
       <main className="main-content">
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid var(--maroon)', paddingBottom: '1rem', gap: '1rem' }}>
+        <header className="main-header">
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', width: '100%' }}>
             <button className="menu-toggle" onClick={() => setIsMenuOpen(!isMenuOpen)}>
               {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
-              MENU
             </button>
             <div style={{ position: 'relative', flex: 1 }}>
               <Search size={18} style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--maroon)' }} />
@@ -419,18 +459,10 @@ function App() {
               />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <button className="premium-btn" style={{ padding: '8px' }}>
-              <Bell size={20} />
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '32px', height: '32px', background: 'var(--maroon)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
-                {userData.name[0]}
-              </div>
-              <div className="header-user-info" style={{ display: 'flex', flexDirection: 'column' }}>
-                <p style={{ fontWeight: 700, fontSize: '0.875rem' }}>{userData.name}</p>
-                <p style={{ fontSize: '0.75rem', color: 'var(--maroon)', fontWeight: 600 }}>{userData.role.toUpperCase()}</p>
-              </div>
+          <div className="header-right" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <div style={{ textAlign: 'right', minWidth: 'fit-content' }}>
+              <p style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--maroon)' }}>SYSTEM OPERATIONAL</p>
+              <p style={{ fontSize: '0.65rem', fontWeight: 700 }}>{new Date().toLocaleDateString()}</p>
             </div>
           </div>
         </header>
@@ -477,6 +509,24 @@ function VerificationScreen({ user, userData, onRefresh }) {
     
     setIsSubmitting(true)
     try {
+      // 1. Check Capacity first
+      const studentSnap = await getDocs(collection(db, 'students'))
+      if (studentSnap.size >= 60) {
+        alert("SYSTEM CAPACITY REACHED (60/60). New registrations are currently suspended.")
+        setIsSubmitting(false)
+        return
+      }
+
+      // 2. Check Whitelist
+      const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', user.email))
+      const whitelistSnap = await getDocs(whitelistQuery)
+      
+      if (whitelistSnap.empty) {
+        alert("ACCESS DENIED: Your email is not on the official whitelist. Please contact the administrator to be invited.")
+        setIsSubmitting(false)
+        return
+      }
+
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         email: user.email,
@@ -506,7 +556,7 @@ function VerificationScreen({ user, userData, onRefresh }) {
           <p>Request submitted for {user.email}</p>
           <div style={{ padding: '1rem', border: '1px solid var(--maroon)', margin: '1.5rem 0', background: 'var(--cream-dark)' }}>
             <p style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-              Your account is awaiting approval from Superadmin (Sayan Das).
+              Your account is awaiting approval from Superadmin (Sayan Maity).
               Please contact the development team if this takes more than 24 hours.
             </p>
           </div>
@@ -1837,6 +1887,121 @@ function PerformanceSheet({ students, events }) {
       </div>
     </div>
   );
+}
+
+
+function WhitelistManagementView() {
+  const [emails, setEmails] = useState([])
+  const [newEmail, setNewEmail] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
+
+  useEffect(() => {
+    const q = query(collection(db, 'whitelist'))
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setEmails(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })))
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    if (!newEmail || isAdding) return
+    setIsAdding(true)
+    try {
+      // Check if already exists
+      const existing = emails.find(e => e.email.toLowerCase() === newEmail.toLowerCase())
+      if (existing) {
+        alert("Email already whitelisted.")
+        setIsAdding(false)
+        return
+      }
+
+      await addDoc(collection(db, 'whitelist'), {
+        email: newEmail.toLowerCase(),
+        addedAt: new Date().toISOString()
+      })
+      setNewEmail('')
+    } catch (error) {
+      console.error("Failed to add to whitelist:", error)
+      alert("Error adding email.")
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
+  const handleRemove = async (id, email) => {
+    if (email === 'jcsayan7@gmail.com') {
+      alert("Cannot remove superadmin from whitelist.")
+      return
+    }
+    if (window.confirm(`Remove ${email} from whitelist?`)) {
+      try {
+        await deleteDoc(doc(db, 'whitelist', id))
+      } catch (error) {
+        console.error("Failed to remove from whitelist:", error)
+      }
+    }
+  }
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1 className="page-title">Access Control</h1>
+        <p className="page-subtitle">Manage whitelisted emails for system access.</p>
+      </div>
+
+      <div className="card" style={{ marginBottom: '2rem' }}>
+        <h2 className="card-title">GRANT ACCESS</h2>
+        <form onSubmit={handleAdd} style={{ display: 'flex', gap: '1rem' }}>
+          <input 
+            type="email" 
+            className="input-field" 
+            placeholder="Enter student email..." 
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            required
+            style={{ flex: 1 }}
+          />
+          <button type="submit" className="premium-btn" disabled={isAdding}>
+            <Plus size={18} /> {isAdding ? 'ADDING...' : 'ADD TO WHITELIST'}
+          </button>
+        </form>
+      </div>
+
+      <div className="table-container">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>EMAIL ADDRESS</th>
+              <th>ADDED ON</th>
+              <th style={{ textAlign: 'right' }}>ACTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            {emails.length > 0 ? emails.map(e => (
+              <tr key={e.id}>
+                <td style={{ fontWeight: 800 }}>{e.email}</td>
+                <td>{new Date(e.addedAt).toLocaleDateString()}</td>
+                <td style={{ textAlign: 'right' }}>
+                  <button 
+                    className="icon-btn delete" 
+                    onClick={() => handleRemove(e.id, e.email)}
+                    disabled={e.email === 'jcsayan7@gmail.com'}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan="3" style={{ textAlign: 'center', padding: '2rem' }}>No whitelisted emails.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 export default App
