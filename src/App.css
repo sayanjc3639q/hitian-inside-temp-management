@@ -1,0 +1,4 @@
+/* Styles moved to index.css for global foundation */
+.primary {
+  color: var(--primary);
+}
