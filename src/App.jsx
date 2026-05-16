@@ -172,6 +172,22 @@ function App() {
     }
   }, [user, userData])
 
+  // Security Monitor: Force logout if account is deleted by admin
+  useEffect(() => {
+    if (!user || !userData || userData.status === 'new' || userData.status === 'pending') return
+
+    const userRef = doc(db, 'users', user.uid)
+    const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        console.warn("User account deleted. Terminating session...")
+        handleLogout()
+        alert("SECURITY ALERT: Your account has been removed by an administrator. Session terminated.")
+      }
+    })
+
+    return () => unsubscribe()
+  }, [user, userData])
+
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider)
@@ -192,8 +208,41 @@ function App() {
   }
 
   const deleteStudent = async (id) => {
-    if (confirm('Are you sure you want to delete this student record?')) {
-      await deleteDoc(doc(db, 'students', id))
+    const studentToDelete = students.find(s => s.id === id)
+    if (!studentToDelete) return
+
+    if (confirm(`PERMANENT ACTION: Are you sure you want to delete ${studentToDelete.name}? This will remove their student record, user account, and whitelist entry, effectively terminating their access.`)) {
+      try {
+        // 1. Delete from students collection
+        await deleteDoc(doc(db, 'students', id))
+
+        // 2. Find and delete from users collection (match by roll)
+        if (studentToDelete.roll) {
+          const userQuery = query(collection(db, 'users'), where('roll', '==', studentToDelete.roll))
+          const userSnap = await getDocs(userQuery)
+          
+          const userDeletions = userSnap.docs.map(async (userDoc) => {
+            const userData = userDoc.data()
+            const userEmail = userData.email
+            
+            // Delete user doc
+            await deleteDoc(doc(db, 'users', userDoc.id))
+            
+            // 3. Find and delete from whitelist (match by email)
+            if (userEmail) {
+              const whiteQuery = query(collection(db, 'whitelist'), where('email', '==', userEmail))
+              const whiteSnap = await getDocs(whiteQuery)
+              const whiteDeletions = whiteSnap.docs.map(whiteDoc => deleteDoc(doc(db, 'whitelist', whiteDoc.id)))
+              await Promise.all(whiteDeletions)
+            }
+          })
+          await Promise.all(userDeletions)
+        }
+        alert("Student account and all associated access records permanently removed.")
+      } catch (error) {
+        console.error("Deletion error:", error)
+        alert("Error during permanent deletion.")
+      }
     }
   }
 
