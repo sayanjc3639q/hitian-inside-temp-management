@@ -52,6 +52,7 @@ function App() {
   
   const [isFocusMode, setIsFocusMode] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [memberSearchQuery, setMemberSearchQuery] = useState('')
 
   useEffect(() => {
     if (toastMessage) {
@@ -80,6 +81,23 @@ function App() {
     ev.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     ev.id.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Calculate tasks completed dynamically for a member
+  const getTasksCountForMember = (memberName) => {
+    let count = 0
+    events.forEach(ev => {
+      const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev']
+      domains.forEach(d => {
+        if (ev[d] && Array.isArray(ev[d])) {
+          const isAssigned = ev[d].some(p => p.name === memberName)
+          if (isAssigned) {
+            count++
+          }
+        }
+      })
+    })
+    return count
+  }
 
   // Fetch from Supabase
   const fetchEvents = async () => {
@@ -135,7 +153,7 @@ function App() {
 
   const navItems = [
     { id: 'SHEET', label: 'SHEET', icon: FileSpreadsheet },
-    { id: 'EVENT', label: 'EVENT', icon: Calendar },
+    { id: 'DASHBOARD', label: 'DASHBOARD', icon: Calendar },
     { id: 'MEMBER', label: 'MEMBER', icon: Users },
     { id: 'ACCOUNT', label: 'ACCOUNT', icon: User }
   ]
@@ -208,10 +226,14 @@ function App() {
         return (
           <div className="page-layout">
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div>
-                <h1 className="page-title">Performance Sheets</h1>
-                <p className="page-subtitle">Track, evaluate, and export member performance records. Click cells in Desktop view to edit assignees.</p>
-              </div>
+              {!isFocusMode ? (
+                <div>
+                  <h1 className="page-title">Performance Sheets</h1>
+                  <p className="page-subtitle">Track, evaluate, and export member performance records. Click cells in Desktop view to edit assignees.</p>
+                </div>
+              ) : (
+                <div></div>
+              )}
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
@@ -374,11 +396,11 @@ function App() {
           </div>
         )
       }
-      case 'EVENT':
+      case 'DASHBOARD':
         return (
           <div className="page-layout">
             <header className="page-header">
-              <h1 className="page-title">Event Operations</h1>
+              <h1 className="page-title">Operational Dashboard</h1>
               <p className="page-subtitle">Schedule, assign tasks, and monitor active events.</p>
             </header>
             <div className="coming-soon-card">
@@ -392,6 +414,11 @@ function App() {
           </div>
         )
       case 'MEMBER': {
+        const filteredMembers = members.filter(m => 
+          m.name.toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
+          m.domain.toLowerCase().includes(memberSearchQuery.toLowerCase())
+        )
+
         return (
           <div className="page-layout">
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -399,7 +426,15 @@ function App() {
                 <h1 className="page-title">Member Directory</h1>
                 <p className="page-subtitle">Database of all active and registered club members.</p>
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="Search members..." 
+                  style={{ maxWidth: '200px', padding: '0.55rem 0.85rem', fontSize: '0.85rem' }}
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                />
                 <button className="sheet-action-btn" onClick={() => alert("Filter Year triggered!")}>Filter Year</button>
                 <button className="sheet-action-btn primary" onClick={() => setActiveModal('ADD_MEMBER')}>Add Member</button>
               </div>
@@ -420,14 +455,14 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {members.length === 0 ? (
+                      {filteredMembers.length === 0 ? (
                         <tr>
                           <td colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
                             No data to show
                           </td>
                         </tr>
                       ) : (
-                        members.map((member, idx) => (
+                        filteredMembers.map((member, idx) => (
                           <tr key={member.id || idx}>
                             <td style={{ fontWeight: '700' }}>{member.name}</td>
                             <td>{member.year}</td>
@@ -437,7 +472,7 @@ function App() {
                               </span>
                             </td>
                             <td style={{ fontWeight: '800', color: 'var(--maroon-accent)', paddingLeft: '2.5rem' }}>
-                              {member.completed}
+                              {(member.completed || 0) + getTasksCountForMember(member.name)}
                             </td>
                             <td>
                               <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
@@ -455,18 +490,18 @@ function App() {
 
             {/* Mobile Card View */}
             <div className="mobile-cards-view">
-              {members.length === 0 ? (
+              {filteredMembers.length === 0 ? (
                 <div className="coming-soon-card" style={{ minHeight: '150px', padding: '2rem' }}>
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0, fontWeight: '500' }}>No data to show</p>
                 </div>
               ) : (
-                members.map((member, idx) => (
+                filteredMembers.map((member, idx) => (
                   <div className="mobile-event-card" key={member.id || idx}>
                     <div className="mobile-event-card-header">
                       <span className="mobile-event-id">{member.year}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                         <span className="mobile-event-date" style={{ fontWeight: '800', color: 'var(--maroon-accent)' }}>
-                          {member.completed} Tasks Done
+                          {(member.completed || 0) + getTasksCountForMember(member.name)} Tasks Done
                         </span>
                         <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
                           <Trash2 size={14} />
