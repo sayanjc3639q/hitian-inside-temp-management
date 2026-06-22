@@ -1,19 +1,48 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { FileSpreadsheet, Calendar, Users, User, Menu, X, Hammer, Plus, UserPlus, FolderPlus, Trash2 } from 'lucide-react'
+import { FileSpreadsheet, Calendar, Users, User, Menu, X, Hammer, Plus, UserPlus, FolderPlus, Trash2, Edit } from 'lucide-react'
 import './App.css'
 import { supabase } from './supabase'
+
+// Date format conversion helpers
+const formatDateToDisplay = (dateStr) => {
+  if (!dateStr) return ''
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) return dateStr
+  const parts = dateStr.split('-')
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`
+  }
+  return dateStr
+}
+
+const formatDateToDB = (dateStr) => {
+  if (!dateStr) return null
+  const parts = dateStr.split('-')
+  if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`
+  }
+  return dateStr
+}
+
 
 function App() {
   const [activePage, setActivePage] = useState('SHEET')
   const [isMobileExpanded, setIsMobileExpanded] = useState(false)
   const [isFabOpen, setIsFabOpen] = useState(false)
-  const [activeModal, setActiveModal] = useState(null) // 'ADD_EVENT', 'ADD_MEMBER', 'EDIT_CELL'
+  const [activeModal, setActiveModal] = useState(null) // 'ADD_EVENT', 'ADD_MEMBER', 'EDIT_CELL', 'EDIT_EVENT'
+  const [editingEventItem, setEditingEventItem] = useState(null)
   
   const tableScrollRef = useRef(null)
 
   // 1. Core States for dynamic updates
   const [events, setEvents] = useState([])
   const [members, setMembers] = useState([])
+
+  // Sort events by date descending
+  const sortedEvents = [...events].sort((a, b) => {
+    const dateA = a.date ? new Date(a.date) : new Date(0)
+    const dateB = b.date ? new Date(b.date) : new Date(0)
+    return dateB - dateA
+  })
 
   // Fetch from Supabase
   const fetchEvents = async () => {
@@ -169,18 +198,18 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {events.length === 0 ? (
+                      {sortedEvents.length === 0 ? (
                         <tr>
                           <td colSpan={11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
                             No data to show
                           </td>
                         </tr>
                       ) : (
-                        events.map((ev) => (
+                        sortedEvents.map((ev) => (
                           <tr key={ev.id}>
                             <td className="highlight-cell">{ev.id}</td>
                             <td style={{ fontWeight: '600' }}>{ev.name}</td>
-                            <td style={{ whiteSpace: 'nowrap' }}>{ev.date || 'No Date'}</td>
+                            <td style={{ whiteSpace: 'nowrap' }}>{formatDateToDisplay(ev.date) || 'No Date'}</td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'photographer')}>{renderPersonnel(ev.photographer, true)}</td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'graphic')}>{renderPersonnel(ev.graphic, true)}</td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'writer')}>{renderPersonnel(ev.writer, true)}</td>
@@ -189,9 +218,14 @@ function App() {
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'pr')}>{renderPersonnel(ev.pr, true)}</td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'dev')}>{renderPersonnel(ev.dev, true)}</td>
                             <td>
-                              <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteEvent(ev.id)} title="Delete Event">
-                                <Trash2 size={16} />
-                              </button>
+                              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                <button className="remove-assignee-btn" style={{ color: 'var(--maroon-primary)' }} onClick={() => { setEditingEventItem(ev); setActiveModal('EDIT_EVENT'); }} title="Edit Event Name & Date">
+                                  <Edit size={16} />
+                                </button>
+                                <button className="remove-assignee-btn" onClick={() => handleDeleteEvent(ev.id)} title="Delete Event">
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -204,12 +238,12 @@ function App() {
 
             {/* Mobile Card View */}
             <div className="mobile-cards-view">
-              {events.length === 0 ? (
+              {sortedEvents.length === 0 ? (
                 <div className="coming-soon-card" style={{ minHeight: '150px', padding: '2rem' }}>
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0, fontWeight: '500' }}>No data to show</p>
                 </div>
               ) : (
-                events.map((ev) => {
+                sortedEvents.map((ev) => {
                   const pContent = renderPersonnel(ev.photographer)
                   const gContent = renderPersonnel(ev.graphic)
                   const wContent = renderPersonnel(ev.writer)
@@ -223,7 +257,10 @@ function App() {
                       <div className="mobile-event-card-header">
                         <span className="mobile-event-id">{ev.id}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                          <span className="mobile-event-date">{ev.date || 'No Date'}</span>
+                          <span className="mobile-event-date">{formatDateToDisplay(ev.date) || 'No Date'}</span>
+                          <button className="remove-assignee-btn" style={{ padding: '0.2rem', color: 'var(--maroon-primary)' }} onClick={() => { setEditingEventItem(ev); setActiveModal('EDIT_EVENT'); }} title="Edit Event">
+                            <Edit size={14} />
+                          </button>
                           <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteEvent(ev.id)} title="Delete Event">
                             <Trash2 size={14} />
                           </button>
@@ -615,6 +652,31 @@ function App() {
           }}
         />
       )}
+
+      {activeModal === 'EDIT_EVENT' && editingEventItem && (
+        <EditEventModal 
+          eventItem={editingEventItem}
+          onClose={() => {
+            setActiveModal(null)
+            setEditingEventItem(null)
+          }}
+          onSave={async (updatedEvent) => {
+            try {
+              const { error } = await supabase
+                .from('events')
+                .update({ name: updatedEvent.name, date: updatedEvent.date })
+                .eq('id', updatedEvent.id)
+              if (error) throw error
+
+              setEvents(events.map(ev => ev.id === updatedEvent.id ? updatedEvent : ev))
+              setActiveModal(null)
+              setEditingEventItem(null)
+            } catch (err) {
+              alert('Error updating event in Supabase: ' + err.message)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -630,10 +692,11 @@ function AddEventModal({ onClose, onAdd }) {
     if (!name.trim()) return
 
     const randomId = `E-${Math.floor(1000 + Math.random() * 9000)}`
+    const formattedDate = date ? formatDateToDB(date) : new Date().toISOString().split('T')[0]
     const newEvent = {
       id: randomId,
       name: name.trim(),
-      date: date || new Date().toISOString().split('T')[0],
+      date: formattedDate,
       photographer: null,
       graphic: null,
       writer: null,
@@ -665,10 +728,13 @@ function AddEventModal({ onClose, onAdd }) {
             />
           </div>
           <div className="form-group">
-            <label>Event Date (Optional)</label>
+            <label>Event Date (DD-MM-YYYY, Optional)</label>
             <input 
-              type="date" 
+              type="text" 
               className="form-input" 
+              placeholder="DD-MM-YYYY (e.g. 18-06-2026)"
+              pattern="\d{2}-\d{2}-\d{4}"
+              title="Please enter in DD-MM-YYYY format"
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
             />
@@ -676,6 +742,62 @@ function AddEventModal({ onClose, onAdd }) {
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-primary">Add Event</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EditEventModal({ eventItem, onClose, onSave }) {
+  const [name, setName] = useState(eventItem.name)
+  const [date, setDate] = useState(formatDateToDisplay(eventItem.date))
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!name.trim()) return
+
+    const updatedEvent = {
+      ...eventItem,
+      name: name.trim(),
+      date: formatDateToDB(date)
+    }
+    onSave(updatedEvent)
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div className="modal-header">
+          <h3>Edit Event Details</h3>
+          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-form">
+          <div className="form-group">
+            <label>Event Name *</label>
+            <input 
+              type="text" 
+              className="form-input" 
+              required 
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
+            />
+          </div>
+          <div className="form-group">
+            <label>Event Date (DD-MM-YYYY, Optional)</label>
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="DD-MM-YYYY (e.g. 18-06-2026)"
+              pattern="\d{2}-\d{2}-\d{4}"
+              title="Please enter in DD-MM-YYYY format"
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+            />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Changes</button>
           </div>
         </form>
       </div>
