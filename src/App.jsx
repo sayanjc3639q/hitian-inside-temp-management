@@ -6,17 +6,19 @@ import { supabase } from './supabase'
 // Date format conversion helpers
 const formatDateToDisplay = (dateStr) => {
   if (!dateStr) return ''
-  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) return dateStr
-  const parts = dateStr.split('-')
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr
+  const cleanStr = dateStr.replace(/\//g, '-')
+  const parts = cleanStr.split('-')
   if (parts.length === 3 && parts[0].length === 4) {
-    return `${parts[2]}-${parts[1]}-${parts[0]}`
+    return `${parts[2]}/${parts[1]}/${parts[0]}`
   }
   return dateStr
 }
 
 const formatDateToDB = (dateStr) => {
   if (!dateStr) return null
-  const parts = dateStr.split('-')
+  const cleanStr = dateStr.replace(/-/g, '/')
+  const parts = cleanStr.split('/')
   if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
     return `${parts[2]}-${parts[1]}-${parts[0]}`
   }
@@ -30,6 +32,16 @@ function App() {
   const [isFabOpen, setIsFabOpen] = useState(false)
   const [activeModal, setActiveModal] = useState(null) // 'ADD_EVENT', 'ADD_MEMBER', 'EDIT_CELL', 'EDIT_EVENT'
   const [editingEventItem, setEditingEventItem] = useState(null)
+  const [toastMessage, setToastMessage] = useState(null)
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [toastMessage])
   
   const tableScrollRef = useRef(null)
 
@@ -588,11 +600,14 @@ function App() {
                 .select()
               if (error) throw error
               if (data && data[0]) {
-                setEvents([data[0], ...events])
+                setEvents(prevEvents => [data[0], ...prevEvents])
+                setToastMessage(`Event "${data[0].name}" (${data[0].id}) created successfully!`)
+                return true
               }
-              setActiveModal(null)
+              return false
             } catch (err) {
               alert('Error saving event to Supabase: ' + err.message)
+              return false
             }
           }}
         />
@@ -677,6 +692,11 @@ function App() {
           }}
         />
       )}
+      {toastMessage && (
+        <div className="toast-notification">
+          {toastMessage}
+        </div>
+      )}
     </div>
   )
 }
@@ -687,7 +707,7 @@ function AddEventModal({ onClose, onAdd }) {
   const [name, setName] = useState('')
   const [date, setDate] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name.trim()) return
 
@@ -705,7 +725,11 @@ function AddEventModal({ onClose, onAdd }) {
       pr: null,
       dev: null
     }
-    onAdd(newEvent)
+    const success = await onAdd(newEvent)
+    if (success) {
+      setName('')
+      setDate('')
+    }
   }
 
   return (
@@ -728,19 +752,19 @@ function AddEventModal({ onClose, onAdd }) {
             />
           </div>
           <div className="form-group">
-            <label>Event Date (DD-MM-YYYY, Optional)</label>
+            <label>Event Date (DD/MM/YYYY, Optional)</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="DD-MM-YYYY (e.g. 18-06-2026)"
-              pattern="\d{2}-\d{2}-\d{4}"
-              title="Please enter in DD-MM-YYYY format"
+              placeholder="DD/MM/YYYY (e.g. 18/06/2026)"
+              pattern="\d{2}[-/]\d{2}[-/]\d{4}"
+              title="Please enter in DD/MM/YYYY format"
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
             />
           </div>
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
             <button type="submit" className="btn-primary">Add Event</button>
           </div>
         </form>
@@ -784,13 +808,13 @@ function EditEventModal({ eventItem, onClose, onSave }) {
             />
           </div>
           <div className="form-group">
-            <label>Event Date (DD-MM-YYYY, Optional)</label>
+            <label>Event Date (DD/MM/YYYY, Optional)</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="DD-MM-YYYY (e.g. 18-06-2026)"
-              pattern="\d{2}-\d{2}-\d{4}"
-              title="Please enter in DD-MM-YYYY format"
+              placeholder="DD/MM/YYYY (e.g. 18/06/2026)"
+              pattern="\d{2}[-/]\d{2}[-/]\d{4}"
+              title="Please enter in DD/MM/YYYY format"
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
             />
