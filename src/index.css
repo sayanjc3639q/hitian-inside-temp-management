@@ -20,7 +20,7 @@
   
   /* Font & Spacing Details */
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --sidebar-width: 280px;
+  --sidebar-width: 230px;
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --shadow-sm: 0 2px 8px rgba(128, 0, 32, 0.04);
   --shadow-md: 0 8px 24px rgba(128, 0, 32, 0.08);

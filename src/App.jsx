@@ -53,6 +53,9 @@ function App() {
   const [isFocusMode, setIsFocusMode] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
+  const [memberDomainFilter, setMemberDomainFilter] = useState('All')
+  const [memberYearFilter, setMemberYearFilter] = useState('All')
+  const [dashboardDomain, setDashboardDomain] = useState('Photographer')
 
   useEffect(() => {
     if (toastMessage) {
@@ -396,28 +399,127 @@ function App() {
           </div>
         )
       }
-      case 'DASHBOARD':
+      case 'DASHBOARD': {
+        const totalEvents = events.length;
+        const totalMembers = members.length;
+        const totalTasksCompleted = members.reduce((acc, m) => acc + (m.completed || 0) + getTasksCountForMember(m.name), 0);
+
+        let topMem = null;
+        let topCount = -1;
+        members.forEach(m => {
+          const score = (m.completed || 0) + getTasksCountForMember(m.name);
+          if (score > topCount && score > 0) {
+            topCount = score;
+            topMem = m.name;
+          }
+        });
+        const topPerformer = topMem ? `${topMem} (${topCount} Tasks)` : 'No tasks assigned';
+
+        // Domain-specific data
+        const domainMembers = members.filter(m => m.domain === dashboardDomain);
+        const sortedDomainMembers = domainMembers.map(m => {
+          const tasks = (m.completed || 0) + getTasksCountForMember(m.name);
+          return { name: m.name, tasks };
+        }).sort((a, b) => b.tasks - a.tasks);
+
+        const maxDomainTasks = Math.max(...sortedDomainMembers.map(sm => sm.tasks), 0) || 1;
+
         return (
           <div className="page-layout">
             <header className="page-header">
               <h1 className="page-title">Operational Dashboard</h1>
-              <p className="page-subtitle">Schedule, assign tasks, and monitor active events.</p>
+              <p className="page-subtitle">Track events, analyze members' performance, and monitor active operational domains.</p>
             </header>
-            <div className="coming-soon-card">
-              <div className="hammer-animation-wrapper">
-                <Hammer className="animated-hammer" size={56} />
-                <div className="impact-shockwave"></div>
+
+            {/* Quick Stats Grid */}
+            <div className="stats-grid">
+              <div className="stat-card">
+                <span className="stat-title">Total Events</span>
+                <span className="stat-value">{totalEvents}</span>
               </div>
-              <h2 className="coming-soon-title">Under Construction</h2>
-              <p className="coming-soon-text">We are assembling resources! Event allocation and logs will be active soon.</p>
+              <div className="stat-card">
+                <span className="stat-title">Registered Members</span>
+                <span className="stat-value">{totalMembers}</span>
+              </div>
+              <div className="stat-card">
+                <span className="stat-title">Total Tasks Completed</span>
+                <span className="stat-value">{totalTasksCompleted}</span>
+              </div>
+              <div className="stat-card">
+                <span className="stat-title">Top Contributor</span>
+                <span className="stat-value" style={{ fontSize: '1.2rem', marginTop: '0.5rem', fontWeight: '700' }}>
+                  {topPerformer}
+                </span>
+              </div>
+            </div>
+
+            {/* Domain Wise Bar Graph Card */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <div className="chart-title-group">
+                  <h3>Domain Performance Visualizer</h3>
+                  <p>Compare member contributions within each domain category.</p>
+                </div>
+                <select 
+                  className="form-input" 
+                  style={{ maxWidth: '200px', cursor: 'pointer', height: '38px' }}
+                  value={dashboardDomain}
+                  onChange={(e) => setDashboardDomain(e.target.value)}
+                >
+                  <option value="Photographer">Photographer</option>
+                  <option value="Graphic Designer">Graphic Designer</option>
+                  <option value="Content Writter">Content Writter</option>
+                  <option value="Video Editor">Video Editor</option>
+                  <option value="Public Relation">Public Relation</option>
+                  <option value="Web Developer">Web Developer</option>
+                </select>
+              </div>
+
+              {sortedDomainMembers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  No members currently registered under the "{dashboardDomain}" domain.
+                </div>
+              ) : (
+                <div className="chart-body">
+                  {sortedDomainMembers.map((m, idx) => {
+                    const percentage = Math.max((m.tasks / maxDomainTasks) * 100, 3); // minimum 3% for visibility
+                    return (
+                      <div className="chart-row" key={idx}>
+                        <div className="chart-member-name" title={m.name}>
+                          {m.name}
+                        </div>
+                        <div className="chart-bar-container">
+                          <div 
+                            className="chart-bar-fill" 
+                            style={{ width: `${percentage}%` }}
+                          >
+                            {m.tasks > 0 && (
+                              <span className="chart-bar-label-inside">
+                                {m.tasks}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="chart-value-label">
+                          {m.tasks} {m.tasks === 1 ? 'task' : 'tasks'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )
+      }
       case 'MEMBER': {
-        const filteredMembers = members.filter(m => 
-          m.name.toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
-          m.domain.toLowerCase().includes(memberSearchQuery.toLowerCase())
-        )
+        const filteredMembers = members.filter(m => {
+          const matchesSearch = m.name.toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
+                                m.domain.toLowerCase().includes(memberSearchQuery.toLowerCase());
+          const matchesDomain = memberDomainFilter === 'All' || m.domain === memberDomainFilter;
+          const matchesYear = memberYearFilter === 'All' || m.year === memberYearFilter;
+          return matchesSearch && matchesDomain && matchesYear;
+        })
 
         return (
           <div className="page-layout">
@@ -435,7 +537,32 @@ function App() {
                   value={memberSearchQuery}
                   onChange={(e) => setMemberSearchQuery(e.target.value)}
                 />
-                <button className="sheet-action-btn" onClick={() => alert("Filter Year triggered!")}>Filter Year</button>
+                <select 
+                  className="form-input" 
+                  style={{ maxWidth: '160px', padding: '0.55rem 0.85rem', fontSize: '0.85rem', height: '38px', cursor: 'pointer' }}
+                  value={memberDomainFilter}
+                  onChange={(e) => setMemberDomainFilter(e.target.value)}
+                >
+                  <option value="All">All Domains</option>
+                  <option value="Photographer">Photographer</option>
+                  <option value="Graphic Designer">Graphic Designer</option>
+                  <option value="Content Writter">Content Writter</option>
+                  <option value="Video Editor">Video Editor</option>
+                  <option value="Public Relation">Public Relation</option>
+                  <option value="Web Developer">Web Developer</option>
+                </select>
+                <select 
+                  className="form-input" 
+                  style={{ maxWidth: '130px', padding: '0.55rem 0.85rem', fontSize: '0.85rem', height: '38px', cursor: 'pointer' }}
+                  value={memberYearFilter}
+                  onChange={(e) => setMemberYearFilter(e.target.value)}
+                >
+                  <option value="All">All Years</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                </select>
                 <button className="sheet-action-btn primary" onClick={() => setActiveModal('ADD_MEMBER')}>Add Member</button>
               </div>
             </header>
@@ -702,11 +829,14 @@ function App() {
                 .select()
               if (error) throw error
               if (data && data[0]) {
-                setMembers([...members, data[0]].sort((a, b) => a.name.localeCompare(b.name)))
+                setMembers(prev => [...prev, data[0]].sort((a, b) => a.name.localeCompare(b.name)))
+                setToastMessage(`Member "${data[0].name}" registered successfully!`)
+                return true
               }
-              setActiveModal(null)
+              return false
             } catch (err) {
               alert('Error registering member in Supabase: ' + err.message)
+              return false
             }
           }}
         />
@@ -912,8 +1042,7 @@ function AddMemberModal({ onClose, onAdd }) {
   const [year, setYear] = useState('1st Year')
   const [domain, setDomain] = useState('Photographer')
   const [completed, setCompleted] = useState(0)
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name.trim()) return
 
@@ -923,7 +1052,11 @@ function AddMemberModal({ onClose, onAdd }) {
       domain,
       completed: parseInt(completed) || 0
     }
-    onAdd(newMember)
+    const success = await onAdd(newMember)
+    if (success) {
+      setName('')
+      setCompleted(0)
+    }
   }
 
   return (
@@ -976,7 +1109,7 @@ function AddMemberModal({ onClose, onAdd }) {
             />
           </div>
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
             <button type="submit" className="btn-primary">Add Member</button>
           </div>
         </form>
