@@ -107,14 +107,22 @@ function App() {
   // Cell Editor States
   const [editingCellInfo, setEditingCellInfo] = useState(null) // { eventId, domainKey }
 
-  const handleWheel = (e) => {
-    if (e.altKey) {
-      e.preventDefault()
-      if (tableScrollRef.current) {
-        tableScrollRef.current.scrollLeft += e.deltaY
+  useEffect(() => {
+    const tableScrollContainer = tableScrollRef.current
+    if (!tableScrollContainer) return
+
+    const handleWheelNative = (e) => {
+      if (e.altKey) {
+        e.preventDefault()
+        tableScrollContainer.scrollLeft += e.deltaY
       }
     }
-  }
+
+    tableScrollContainer.addEventListener('wheel', handleWheelNative, { passive: false })
+    return () => {
+      tableScrollContainer.removeEventListener('wheel', handleWheelNative)
+    }
+  }, [activePage, events])
 
   const navItems = [
     { id: 'SHEET', label: 'SHEET', icon: FileSpreadsheet },
@@ -207,7 +215,6 @@ function App() {
                 <div 
                   ref={tableScrollRef}
                   className="table-scroll-container"
-                  onWheel={handleWheel}
                 >
                   <table className="sheet-table">
                     <thead>
