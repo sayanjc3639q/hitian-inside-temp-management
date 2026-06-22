@@ -17,10 +17,26 @@ const formatDateToDisplay = (dateStr) => {
 
 const formatDateToDB = (dateStr) => {
   if (!dateStr) return null
+  
+  // Strip all non-digit characters to see if we have 8 raw digits (e.g. 17052026)
+  const rawDigits = dateStr.replace(/\D/g, '')
+  if (rawDigits.length === 8) {
+    const day = rawDigits.substring(0, 2)
+    const month = rawDigits.substring(2, 4)
+    const year = rawDigits.substring(4, 8)
+    return `${year}-${month}-${day}`
+  }
+
+  // Fallback to standard separator matching
   const cleanStr = dateStr.replace(/-/g, '/')
   const parts = cleanStr.split('/')
-  if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
-    return `${parts[2]}-${parts[1]}-${parts[0]}`
+  if (parts.length === 3) {
+    const day = parts[0].padStart(2, '0')
+    const month = parts[1].padStart(2, '0')
+    const year = parts[2]
+    if (year.length === 4) {
+      return `${year}-${month}-${day}`
+    }
   }
   return dateStr
 }
@@ -752,13 +768,13 @@ function AddEventModal({ onClose, onAdd }) {
             />
           </div>
           <div className="form-group">
-            <label>Event Date (DD/MM/YYYY, Optional)</label>
+            <label>Event Date (DD/MM/YYYY or DDMMYYYY, Optional)</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="DD/MM/YYYY (e.g. 18/06/2026)"
-              pattern="\d{2}[-/]\d{2}[-/]\d{4}"
-              title="Please enter in DD/MM/YYYY format"
+              placeholder="e.g. 17052026 or 17/05/2026"
+              pattern="(\d{8}|\d{2}[-/]\d{2}[-/]\d{4})"
+              title="Please enter as DDMMYYYY (e.g. 17052026) or DD/MM/YYYY (e.g. 17/05/2026)"
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
             />
@@ -808,13 +824,13 @@ function EditEventModal({ eventItem, onClose, onSave }) {
             />
           </div>
           <div className="form-group">
-            <label>Event Date (DD/MM/YYYY, Optional)</label>
+            <label>Event Date (DD/MM/YYYY or DDMMYYYY, Optional)</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="DD/MM/YYYY (e.g. 18/06/2026)"
-              pattern="\d{2}[-/]\d{2}[-/]\d{4}"
-              title="Please enter in DD/MM/YYYY format"
+              placeholder="e.g. 17052026 or 17/05/2026"
+              pattern="(\d{8}|\d{2}[-/]\d{2}[-/]\d{4})"
+              title="Please enter as DDMMYYYY (e.g. 17052026) or DD/MM/YYYY (e.g. 17/05/2026)"
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
             />
