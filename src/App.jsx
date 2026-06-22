@@ -49,6 +49,9 @@ function App() {
   const [activeModal, setActiveModal] = useState(null) // 'ADD_EVENT', 'ADD_MEMBER', 'EDIT_CELL', 'EDIT_EVENT'
   const [editingEventItem, setEditingEventItem] = useState(null)
   const [toastMessage, setToastMessage] = useState(null)
+  
+  const [isFocusMode, setIsFocusMode] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     if (toastMessage) {
@@ -71,6 +74,12 @@ function App() {
     const dateB = b.date ? new Date(b.date) : new Date(0)
     return dateB - dateA
   })
+
+  // Filter events by search query
+  const filteredEvents = sortedEvents.filter(ev => 
+    ev.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    ev.id.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   // Fetch from Supabase
   const fetchEvents = async () => {
@@ -203,8 +212,19 @@ function App() {
                 <h1 className="page-title">Performance Sheets</h1>
                 <p className="page-subtitle">Track, evaluate, and export member performance records. Click cells in Desktop view to edit assignees.</p>
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="Search events..." 
+                  style={{ maxWidth: '200px', padding: '0.55rem 0.85rem', fontSize: '0.85rem' }}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
                 <button className="sheet-action-btn" onClick={() => alert("CSV Export Triggered!")}>Export CSV</button>
+                <button className={`sheet-action-btn ${isFocusMode ? 'primary' : ''}`} onClick={() => setIsFocusMode(!isFocusMode)}>
+                  {isFocusMode ? 'Exit Full Screen' : 'Full Screen'}
+                </button>
                 <button className="sheet-action-btn primary" onClick={() => window.print()}>Print Sheet</button>
               </div>
             </header>
@@ -233,14 +253,14 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedEvents.length === 0 ? (
+                      {filteredEvents.length === 0 ? (
                         <tr>
                           <td colSpan={11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
                             No data to show
                           </td>
                         </tr>
                       ) : (
-                        sortedEvents.map((ev) => (
+                        filteredEvents.map((ev) => (
                           <tr key={ev.id}>
                             <td className="highlight-cell">{ev.id}</td>
                             <td style={{ fontWeight: '600' }}>{ev.name}</td>
@@ -273,12 +293,12 @@ function App() {
 
             {/* Mobile Card View */}
             <div className="mobile-cards-view">
-              {sortedEvents.length === 0 ? (
+              {filteredEvents.length === 0 ? (
                 <div className="coming-soon-card" style={{ minHeight: '150px', padding: '2rem' }}>
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0, fontWeight: '500' }}>No data to show</p>
                 </div>
               ) : (
-                sortedEvents.map((ev) => {
+                filteredEvents.map((ev) => {
                   const pContent = renderPersonnel(ev.photographer)
                   const gContent = renderPersonnel(ev.graphic)
                   const wContent = renderPersonnel(ev.writer)
@@ -492,7 +512,7 @@ function App() {
   }
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${isFocusMode ? 'focus-mode-active' : ''}`}>
       {/* Mobile Sidebar Overlay Backdrop */}
       {isMobileExpanded && (
         <div 

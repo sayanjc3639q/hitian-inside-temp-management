@@ -1036,4 +1036,25 @@
   }
 }
 
+/* Zen/Focus Mode Layout Overrides */
+.app-container.focus-mode-active .sidebar {
+  display: none !important;
+}
+
+.app-container.focus-mode-active .mobile-bottom-nav {
+  display: none !important;
+}
+
+.app-container.focus-mode-active .main-content {
+  margin-left: 0 !important;
+  width: 100% !important;
+  padding: 2.5rem !important;
+}
+
+@media (max-width: 768px) {
+  .app-container.focus-mode-active .main-content {
+    padding: 1.5rem !important;
+  }
+}
+
 
