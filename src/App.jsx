@@ -1,2134 +1,884 @@
-import React, { useState, useEffect } from 'react'
-import { 
-  LayoutDashboard, 
-  Users, 
-  Calendar, 
-  TrendingUp, 
-  Clock, 
-  Search, 
-  Bell, 
-  Rocket, 
-  Plus, 
-  Filter, 
-  Check, 
-  Trash2, 
-  Edit2, 
-  UserCircle,
-  FileText,
-  Download,
-  CalendarDays,
-  Lock,
-  LogOut,
-  ShieldCheck,
-  UserCheck,
-  UserX,
-  ShieldAlert,
-  AlertTriangle,
-  Menu,
-  X
-} from 'lucide-react'
-import { auth, db, googleProvider } from './firebase'
-import { 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged 
-} from 'firebase/auth'
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  onSnapshot, 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc,
-  query,
-  where,
-  getDocs
-} from 'firebase/firestore'
+import React, { useState, useRef, useEffect } from 'react'
+import { FileSpreadsheet, Calendar, Users, User, Menu, X, Hammer, Plus, UserPlus, FolderPlus, Trash2 } from 'lucide-react'
 import './App.css'
+import { supabase } from './supabase'
 
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard')
-  const [user, setUser] = useState(null)
-  const [userData, setUserData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [students, setStudents] = useState([])
-  const [events, setEvents] = useState([])
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [activePage, setActivePage] = useState('SHEET')
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false)
+  const [isFabOpen, setIsFabOpen] = useState(false)
+  const [activeModal, setActiveModal] = useState(null) // 'ADD_EVENT', 'ADD_MEMBER', 'EDIT_CELL'
+  
+  const tableScrollRef = useRef(null)
 
-  // Auth Observer
+  // 1. Core States for dynamic updates
+  const [events, setEvents] = useState([])
+  const [members, setMembers] = useState([])
+
+  // Fetch from Supabase
+  const fetchEvents = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      if (data) setEvents(data)
+    } catch (err) {
+      console.error('Error fetching events:', err.message)
+    }
+  }
+
+  const fetchMembers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .order('name', { ascending: true })
+      if (error) throw error
+      if (data) setMembers(data)
+    } catch (err) {
+      console.error('Error fetching members:', err.message)
+    }
+  }
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (user) {
-          setUser(user)
-          await fetchUserData(user)
-        } else {
-          setUser(null)
-          setUserData(null)
-        }
-      } catch (error) {
-        console.error("Auth initialization error:", error)
-      } finally {
-        setLoading(false)
-      }
-    })
-    return () => unsubscribe()
+    fetchEvents()
+    fetchMembers()
   }, [])
 
-  const fetchUserData = async (authUser) => {
+  // Cell Editor States
+  const [editingCellInfo, setEditingCellInfo] = useState(null) // { eventId, domainKey }
+
+  const handleWheel = (e) => {
+    if (e.altKey) {
+      e.preventDefault()
+      if (tableScrollRef.current) {
+        tableScrollRef.current.scrollLeft += e.deltaY
+      }
+    }
+  }
+
+  const navItems = [
+    { id: 'SHEET', label: 'SHEET', icon: FileSpreadsheet },
+    { id: 'EVENT', label: 'EVENT', icon: Calendar },
+    { id: 'MEMBER', label: 'MEMBER', icon: Users },
+    { id: 'ACCOUNT', label: 'ACCOUNT', icon: User }
+  ]
+
+  // Translate Sheet Column key to Domain string for filtering/editing
+  const getDomainFromKey = (key) => {
+    switch (key) {
+      case 'photographer': return 'Photographer'
+      case 'graphic': return 'Graphic Designer'
+      case 'writer': return 'Content Writter'
+      case 'videographer': return 'Video Editor'
+      case 'editor': return 'Video Editor'
+      case 'pr': return 'Public Relation'
+      case 'dev': return 'Web Developer'
+      default: return ''
+    }
+  }
+
+  const renderPersonnel = (people, showNull = false) => {
+    if (!people || people.length === 0) {
+      return showNull ? <span className="unassigned-placeholder">-</span> : null
+    }
+    return (
+      <div className="personnel-list">
+        {people.map((p, idx) => (
+          <span key={idx} className={`person-badge ${p.type}`} title={p.type.toUpperCase()}>
+            {p.name}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  const openCellEditor = (eventId, domainKey) => {
+    setEditingCellInfo({ eventId, domainKey })
+    setActiveModal('EDIT_CELL')
+  }
+
+  const handleDeleteEvent = async (id) => {
+    if (!confirm("Are you sure you want to delete this event?")) return
     try {
-      const userRef = doc(db, 'users', authUser.uid)
-      const userSnap = await getDoc(userRef)
-
-      if (userSnap.exists()) {
-        const data = userSnap.data()
-        setUserData(data)
-        
-        // Fix for existing superadmin missing from student list
-        if (data.email === 'jcsayan7@gmail.com' && data.role === 'superadmin') {
-          const studentQuery = query(collection(db, 'students'), where('roll', '==', 'SUPERADMIN'))
-          const studentSnap = await getDocs(studentQuery)
-          if (studentSnap.empty) {
-            await addDoc(collection(db, 'students'), {
-              name: 'Sayan Maity',
-              roll: 'SUPERADMIN',
-              domain: 'Development',
-              year: 'N/A',
-              availability: 'Operational',
-              statusNote: 'System Superadmin'
-            })
-          } else {
-            // Update name if it was previously set incorrectly
-            const existingDoc = studentSnap.docs[0]
-            if (existingDoc.data().name !== 'Sayan Maity') {
-              await updateDoc(doc(db, 'students', existingDoc.id), { name: 'Sayan Maity' })
-            }
-          }
-          
-          // Ensure superadmin is also on the whitelist
-          const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', 'jcsayan7@gmail.com'))
-          const whitelistSnap = await getDocs(whitelistQuery)
-          if (whitelistSnap.empty) {
-            await addDoc(collection(db, 'whitelist'), { email: 'jcsayan7@gmail.com', addedAt: new Date().toISOString() })
-          }
-        }
-      } else if (authUser.email === 'jcsayan7@gmail.com') {
-        // Auto-init superadmin
-        const newAdmin = {
-          uid: authUser.uid,
-          email: authUser.email,
-          name: 'Sayan Maity',
-          role: 'superadmin',
-          status: 'verified',
-          domain: 'Development'
-        }
-        await setDoc(userRef, newAdmin)
-        
-        // Also ensure superadmin is in the student list
-        const studentQuery = query(collection(db, 'students'), where('roll', '==', 'SUPERADMIN'))
-        const studentSnap = await getDocs(studentQuery)
-        if (studentSnap.empty) {
-          await addDoc(collection(db, 'students'), {
-            name: 'Sayan Maity',
-            roll: 'SUPERADMIN',
-            domain: 'Development',
-            year: 'N/A',
-            availability: 'Operational',
-            statusNote: 'System Superadmin'
-          })
-        }
-        
-        // Add to whitelist
-        await addDoc(collection(db, 'whitelist'), { email: 'jcsayan7@gmail.com', addedAt: new Date().toISOString() })
-
-        setUserData(newAdmin)
-      } else {
-        // User exists in Auth but not in Firestore yet
-        setUserData({ status: 'new' })
-      }
-    } catch (error) {
-      console.error("Error fetching user data:", error)
-      setUserData({ status: 'new' })
+      const { error } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+      setEvents(events.filter(ev => ev.id !== id))
+    } catch (err) {
+      alert("Error deleting event: " + err.message)
     }
   }
 
-  // Firestore Sync
-  useEffect(() => {
-    if (!user || (userData?.status !== 'verified')) return
-
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
-      setStudents(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })))
-    })
-
-    const unsubEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
-      setEvents(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })))
-    })
-
-    return () => {
-      unsubStudents()
-      unsubEvents()
-    }
-  }, [user, userData])
-
-  // Security Monitor: Force logout if account is deleted by admin
-  useEffect(() => {
-    if (!user || !userData || userData.status === 'new' || userData.status === 'pending') return
-
-    const userRef = doc(db, 'users', user.uid)
-    const unsubscribe = onSnapshot(userRef, (snapshot) => {
-      if (!snapshot.exists()) {
-        console.warn("User account deleted. Terminating session...")
-        handleLogout()
-        alert("SECURITY ALERT: Your account has been removed by an administrator. Session terminated.")
-      }
-    })
-
-    return () => unsubscribe()
-  }, [user, userData])
-
-  const handleLogin = async () => {
+  const handleDeleteMember = async (id, name) => {
+    if (!confirm(`Are you sure you want to delete member ${name}?`)) return
     try {
-      await signInWithPopup(auth, googleProvider)
-    } catch (error) {
-      console.error("Login failed:", error)
+      const { error } = await supabase
+        .from('members')
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+      setMembers(members.filter(m => m.id !== id))
+    } catch (err) {
+      alert("Error deleting member: " + err.message)
     }
   }
-
-  const handleLogout = () => signOut(auth)
-
-  const addStudent = async (newStudent) => {
-    await addDoc(collection(db, 'students'), newStudent)
-  }
-
-  const editStudent = async (updatedStudent) => {
-    const { id, ...data } = updatedStudent
-    await updateDoc(doc(db, 'students', id), data)
-  }
-
-  const deleteStudent = async (id) => {
-    const studentToDelete = students.find(s => s.id === id)
-    if (!studentToDelete) return
-
-    if (confirm(`PERMANENT ACTION: Are you sure you want to delete ${studentToDelete.name}? This will remove their student record, user account, and whitelist entry, effectively terminating their access.`)) {
-      try {
-        // 1. Delete from students collection
-        await deleteDoc(doc(db, 'students', id))
-
-        // 2. Find and delete from users collection (match by roll)
-        if (studentToDelete.roll) {
-          const userQuery = query(collection(db, 'users'), where('roll', '==', studentToDelete.roll))
-          const userSnap = await getDocs(userQuery)
-          
-          const userDeletions = userSnap.docs.map(async (userDoc) => {
-            const userData = userDoc.data()
-            const userEmail = userData.email
-            
-            // Delete user doc
-            await deleteDoc(doc(db, 'users', userDoc.id))
-            
-            // 3. Find and delete from whitelist (match by email)
-            if (userEmail) {
-              const whiteQuery = query(collection(db, 'whitelist'), where('email', '==', userEmail))
-              const whiteSnap = await getDocs(whiteQuery)
-              const whiteDeletions = whiteSnap.docs.map(whiteDoc => deleteDoc(doc(db, 'whitelist', whiteDoc.id)))
-              await Promise.all(whiteDeletions)
-            }
-          })
-          await Promise.all(userDeletions)
-        }
-        alert("Student account and all associated access records permanently removed.")
-      } catch (error) {
-        console.error("Deletion error:", error)
-        alert("Error during permanent deletion.")
-      }
-    }
-  }
-
-  const addEvent = async (newEvent) => {
-    await addDoc(collection(db, 'events'), { 
-      ...newEvent, 
-      assignments: {
-        photographer: 'Unassigned',
-        contentWriter: 'Unassigned',
-        pr: 'Unassigned',
-        videoEditor: 'Unassigned',
-        graphicDesigner: 'Unassigned',
-        webDev: 'Unassigned'
-      },
-      checklist: {
-        membersAssigned: false,
-        photosSorted: false,
-        photosVerified: false,
-        graphicDesignDone: false,
-        postVerified: false,
-        postDone: false
-      }
-    })
-  }
-
-  const updateEvent = async (eventId, updatedEvent) => {
-    const { id, ...data } = updatedEvent
-    await updateDoc(doc(db, 'events', eventId), data)
-  }
-
-  const deleteEvent = async (id) => {
-    if (confirm('Are you sure you want to delete this event? This will remove all associated task tracking.')) {
-      await deleteDoc(doc(db, 'events', id))
-    }
-  }
-
-  const updateMemberStatus = async (availability, statusNote) => {
-    try {
-      await updateDoc(doc(db, 'users', user.uid), { availability, statusNote })
-      setUserData(prev => ({ ...prev, availability, statusNote }))
-      
-      // Attempt to sync with student record if roll number matches
-      if (userData?.roll) {
-        const q = query(collection(db, 'students'), where('roll', '==', userData.roll))
-        const snap = await getDocs(q)
-        if (!snap.empty) {
-          await updateDoc(doc(db, 'students', snap.docs[0].id), { availability, statusNote })
-        }
-      }
-    } catch (error) {
-      console.error("Status Update Error:", error)
-      alert("Failed to update status. Check connection.")
-    }
-  }
-
-  const updateProfileInfo = async (profileData) => {
-    try {
-      await updateDoc(doc(db, 'users', user.uid), profileData)
-      setUserData(prev => ({ ...prev, ...profileData }))
-      alert("Profile updated successfully!")
-    } catch (error) {
-      console.error("Profile Update Error:", error)
-      alert("Failed to update profile information.")
-    }
-  }
-
-  const isSuperadmin = userData?.role === 'superadmin'
-  const isAdmin = userData?.role === 'admin' || isSuperadmin
-  const isMember = userData?.role === 'member'
 
   const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
+    switch (activePage) {
+      case 'SHEET': {
         return (
-          <DashboardHome 
-            studentsCount={students.length} 
-            eventsCount={events.length} 
-            user={userData}
-            events={events}
-            onUpdateEvent={updateEvent}
-          />
+          <div className="page-layout">
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h1 className="page-title">Performance Sheets</h1>
+                <p className="page-subtitle">Track, evaluate, and export member performance records. Click cells in Desktop view to edit assignees.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button className="sheet-action-btn" onClick={() => alert("CSV Export Triggered!")}>Export CSV</button>
+                <button className="sheet-action-btn primary" onClick={() => window.print()}>Print Sheet</button>
+              </div>
+            </header>
+
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <div className="table-card">
+                <div 
+                  ref={tableScrollRef}
+                  className="table-scroll-container"
+                  onWheel={handleWheel}
+                >
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>EVENT ID</th>
+                        <th>EVENT NAME</th>
+                        <th>DATE</th>
+                        <th>PHOTOGRAPHER</th>
+                        <th>GRAPHIC DESIGNER</th>
+                        <th>CONTENT WRITTER</th>
+                        <th>VIDEOGRAPHER</th>
+                        <th>VIDEO EDITOR</th>
+                        <th>PR</th>
+                        <th>WEB DEVELOPER</th>
+                        <th>ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {events.length === 0 ? (
+                        <tr>
+                          <td colSpan={11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
+                            No data to show
+                          </td>
+                        </tr>
+                      ) : (
+                        events.map((ev) => (
+                          <tr key={ev.id}>
+                            <td className="highlight-cell">{ev.id}</td>
+                            <td style={{ fontWeight: '600' }}>{ev.name}</td>
+                            <td style={{ whiteSpace: 'nowrap' }}>{ev.date || 'No Date'}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'photographer')}>{renderPersonnel(ev.photographer, true)}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'graphic')}>{renderPersonnel(ev.graphic, true)}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'writer')}>{renderPersonnel(ev.writer, true)}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'videographer')}>{renderPersonnel(ev.videographer, true)}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'editor')}>{renderPersonnel(ev.editor, true)}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'pr')}>{renderPersonnel(ev.pr, true)}</td>
+                            <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'dev')}>{renderPersonnel(ev.dev, true)}</td>
+                            <td>
+                              <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteEvent(ev.id)} title="Delete Event">
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="mobile-cards-view">
+              {events.length === 0 ? (
+                <div className="coming-soon-card" style={{ minHeight: '150px', padding: '2rem' }}>
+                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0, fontWeight: '500' }}>No data to show</p>
+                </div>
+              ) : (
+                events.map((ev) => {
+                  const pContent = renderPersonnel(ev.photographer)
+                  const gContent = renderPersonnel(ev.graphic)
+                  const wContent = renderPersonnel(ev.writer)
+                  const vgContent = renderPersonnel(ev.videographer)
+                  const eContent = renderPersonnel(ev.editor)
+                  const prContent = renderPersonnel(ev.pr)
+                  const dContent = renderPersonnel(ev.dev)
+
+                  return (
+                    <div className="mobile-event-card" key={ev.id}>
+                      <div className="mobile-event-card-header">
+                        <span className="mobile-event-id">{ev.id}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                          <span className="mobile-event-date">{ev.date || 'No Date'}</span>
+                          <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteEvent(ev.id)} title="Delete Event">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <h3 className="mobile-event-title">{ev.name}</h3>
+                      <div className="mobile-event-assignments">
+                        {pContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">Photographer</span>
+                            {pContent}
+                          </div>
+                        )}
+                        {gContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">Graphic Designer</span>
+                            {gContent}
+                          </div>
+                        )}
+                        {wContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">Content Writter</span>
+                            {wContent}
+                          </div>
+                        )}
+                        {vgContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">Videographer</span>
+                            {vgContent}
+                          </div>
+                        )}
+                        {eContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">Video Editor</span>
+                            {eContent}
+                          </div>
+                        )}
+                        {prContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">PR</span>
+                            {prContent}
+                          </div>
+                        )}
+                        {dContent && (
+                          <div className="assignment-row">
+                            <span className="assignment-label">Web Developer</span>
+                            {dContent}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
         )
-      case 'students':
+      }
+      case 'EVENT':
         return (
-          <StudentsView 
-            students={students} 
-            events={events}
-            onAddStudent={isAdmin ? addStudent : null} 
-            onEditStudent={isAdmin ? editStudent : null}
-            onDeleteStudent={isSuperadmin ? deleteStudent : null}
-            readOnly={!isAdmin}
-          />
+          <div className="page-layout">
+            <header className="page-header">
+              <h1 className="page-title">Event Operations</h1>
+              <p className="page-subtitle">Schedule, assign tasks, and monitor active events.</p>
+            </header>
+            <div className="coming-soon-card">
+              <div className="hammer-animation-wrapper">
+                <Hammer className="animated-hammer" size={56} />
+                <div className="impact-shockwave"></div>
+              </div>
+              <h2 className="coming-soon-title">Under Construction</h2>
+              <p className="coming-soon-text">We are assembling resources! Event allocation and logs will be active soon.</p>
+            </div>
+          </div>
         )
-      case 'events':
+      case 'MEMBER': {
         return (
-          <EventsView 
-            events={events} 
-            students={students} 
-            onAddEvent={isAdmin ? addEvent : null} 
-            onUpdateEvent={updateEvent} 
-            onDeleteEvent={isSuperadmin ? deleteEvent : null}
-            user={userData}
-          />
+          <div className="page-layout">
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h1 className="page-title">Member Directory</h1>
+                <p className="page-subtitle">Database of all active and registered club members.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button className="sheet-action-btn" onClick={() => alert("Filter Year triggered!")}>Filter Year</button>
+                <button className="sheet-action-btn primary" onClick={() => setActiveModal('ADD_MEMBER')}>Add Member</button>
+              </div>
+            </header>
+
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <div className="table-card">
+                <div className="table-scroll-container">
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>MEMBER NAME</th>
+                        <th>YEAR</th>
+                        <th>DOMAIN</th>
+                        <th>TASKS COMPLETED</th>
+                        <th>ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
+                            No data to show
+                          </td>
+                        </tr>
+                      ) : (
+                        members.map((member, idx) => (
+                          <tr key={member.id || idx}>
+                            <td style={{ fontWeight: '700' }}>{member.name}</td>
+                            <td>{member.year}</td>
+                            <td>
+                              <span className="person-badge assigned">
+                                {member.domain}
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: '800', color: 'var(--maroon-accent)', paddingLeft: '2.5rem' }}>
+                              {member.completed}
+                            </td>
+                            <td>
+                              <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="mobile-cards-view">
+              {members.length === 0 ? (
+                <div className="coming-soon-card" style={{ minHeight: '150px', padding: '2rem' }}>
+                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0, fontWeight: '500' }}>No data to show</p>
+                </div>
+              ) : (
+                members.map((member, idx) => (
+                  <div className="mobile-event-card" key={member.id || idx}>
+                    <div className="mobile-event-card-header">
+                      <span className="mobile-event-id">{member.year}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <span className="mobile-event-date" style={{ fontWeight: '800', color: 'var(--maroon-accent)' }}>
+                          {member.completed} Tasks Done
+                        </span>
+                        <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <h3 className="mobile-event-title">{member.name}</h3>
+                    <div className="mobile-event-assignments">
+                      <div className="assignment-row">
+                        <span className="assignment-label">Domain</span>
+                        <span className="person-badge assigned" style={{ alignSelf: 'flex-start' }}>
+                          {member.domain}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         )
-      case 'sheets':
-        return isAdmin ? <PerformanceSheet students={students} events={events} /> : <NoAccessView />
-      case 'users':
-        return isSuperadmin ? <UserVerificationView onAddStudent={addStudent} /> : <NoAccessView />
-      case 'whitelist':
+      }
+      case 'ACCOUNT':
         return (
-          <WhitelistManagementView />
-        )
-      case 'profile':
-        return (
-          <ProfileView 
-            user={userData} 
-            onLogout={handleLogout} 
-            updateMemberStatus={updateMemberStatus} 
-            updateProfileInfo={updateProfileInfo}
-          />
+          <div className="page-layout">
+            <header className="page-header">
+              <h1 className="page-title">Operational Account</h1>
+              <p className="page-subtitle">Manage login details, profile fields, and preferences.</p>
+            </header>
+            <div className="coming-soon-card">
+              <div className="hammer-animation-wrapper">
+                <Hammer className="animated-hammer" size={56} />
+                <div className="impact-shockwave"></div>
+              </div>
+              <h2 className="coming-soon-title">Under Construction</h2>
+              <p className="coming-soon-text">We are assembling parameters! Profiles and credentials will be active soon.</p>
+            </div>
+          </div>
         )
       default:
-        return (
-          <DashboardHome 
-            studentsCount={students.length} 
-            eventsCount={events.length} 
-            user={userData}
-            events={events}
-            onUpdateEvent={updateEvent}
-          />
-        )
+        return null
     }
-  }
-
-  if (loading) return <div className="loading-screen">INITIALIZING SYSTEM...</div>
-  if (!user) return <LoginScreen onLogin={handleLogin} />
-  if (!userData || userData.status === 'pending' || userData.status === 'new') {
-    return <VerificationScreen user={user} userData={userData} onRefresh={() => fetchUserData(user)} />
   }
 
   return (
-    <div className="app-layout">
-      {isMenuOpen && <div className="sidebar-overlay-active" onClick={() => setIsMenuOpen(false)}></div>}
-      <aside className={`sidebar ${isMenuOpen ? 'open' : ''}`}>
-        <div className="sidebar-logo">
-          <Rocket size={24} />
-          <span className="logo-text">HITIAN INSIDE</span>
+    <div className="app-container">
+      {/* Mobile Sidebar Overlay Backdrop */}
+      {isMobileExpanded && (
+        <div 
+          className="sidebar-backdrop" 
+          onClick={() => setIsMobileExpanded(false)}
+        ></div>
+      )}
+
+      {/* Sidebar Navigation */}
+      <aside 
+        className={`sidebar ${isMobileExpanded ? 'mobile-expanded' : ''}`}
+        onClick={() => {
+          if (!isMobileExpanded && window.innerWidth <= 768) {
+            setIsMobileExpanded(true)
+          }
+        }}
+      >
+        <div className="sidebar-brand">
+          <div className="brand-logo-container">
+            <div className="brand-icon"></div>
+          </div>
+          <span className="brand-text">HITIAN INSIDE</span>
+          
+          {window.innerWidth <= 768 && isMobileExpanded && (
+            <button 
+              className="mobile-close-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMobileExpanded(false);
+              }}
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
         
-        <nav className="sidebar-nav">
-          <NavItem 
-            icon={<LayoutDashboard size={20} />} 
-            label="DASHBOARD" 
-            active={activeTab === 'dashboard'} 
-            onClick={() => {
-              setActiveTab('dashboard')
-              setIsMenuOpen(false)
-            }} 
-          />
-          <NavItem 
-            icon={<Users size={20} />} 
-            label="STUDENTS" 
-            active={activeTab === 'students'} 
-            onClick={() => {
-              setActiveTab('students')
-              setIsMenuOpen(false)
-            }} 
-          />
-          <NavItem 
-            icon={<Calendar size={20} />} 
-            label="EVENTS" 
-            active={activeTab === 'events'} 
-            onClick={() => {
-              setActiveTab('events')
-              setIsMenuOpen(false)
-            }} 
-          />
-          {isAdmin && (
-            <NavItem 
-              icon={<FileText size={20} />} 
-              label="SHEETS" 
-              active={activeTab === 'sheets'} 
-              onClick={() => {
-                setActiveTab('sheets')
-                setIsMenuOpen(false)
-              }} 
-            />
-          )}
-          {isSuperadmin && (
-            <>
-              <NavItem 
-                icon={<ShieldCheck size={20} />} 
-                label="VERIFY USERS" 
-                active={activeTab === 'users'} 
-                onClick={() => {
-                  setActiveTab('users')
-                  setIsMenuOpen(false)
-                }} 
-              />
-              <NavItem 
-                icon={<Lock size={20} />} 
-                label="WHITELIST" 
-                active={activeTab === 'whitelist'} 
-                onClick={() => {
-                  setActiveTab('whitelist')
-                  setIsMenuOpen(false)
-                }} 
-              />
-            </>
-          )}
-        </nav>
+        <ul className="sidebar-nav">
+          {navItems.map((item) => {
+            const IconComponent = item.icon
+            return (
+              <li 
+                key={item.id} 
+                className={`nav-item ${activePage === item.id ? 'active' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setActivePage(item.id)
+                  if (window.innerWidth <= 768) {
+                    setIsMobileExpanded(false)
+                  }
+                }}
+              >
+                <div className="nav-icon-wrapper">
+                  <IconComponent size={20} />
+                </div>
+                <span className="nav-label">{item.label}</span>
+              </li>
+            )
+          })}
+        </ul>
 
-        <nav className="sidebar-nav" style={{ marginTop: 'auto', borderTop: '1px solid var(--maroon-light)', paddingTop: '1rem' }}>
-          <div style={{ padding: '0 1rem 0.5rem 1rem', fontSize: '0.65rem', fontWeight: 800, color: '#ffbaba', letterSpacing: '0.1em' }}>ACCOUNT & SYSTEM</div>
-          <NavItem 
-            icon={<UserCircle size={20} />} 
-            label="PROFILE" 
-            active={activeTab === 'profile'} 
-            onClick={() => {
-              setActiveTab('profile')
-              setIsMenuOpen(false)
-            }} 
-          />
-          <NavItem 
-            icon={<Bell size={20} />} 
-            label="NOTIFICATIONS" 
-            active={false} 
-            onClick={() => {
-              alert("No new notifications")
-              setIsMenuOpen(false)
-            }} 
-          />
-        </nav>
-
-        <div className="sidebar-footer" style={{ borderTop: '1px solid var(--maroon-light)', paddingTop: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', padding: '0 0.5rem' }}>
-            <div style={{ width: '32px', height: '32px', background: 'var(--cream)', color: 'var(--maroon)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
-              {userData.name ? userData.name[0].toUpperCase() : 'U'}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <p style={{ fontWeight: 700, fontSize: '0.8rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{userData.name || 'User'}</p>
-              <p style={{ fontSize: '0.65rem', color: '#ffbaba', fontWeight: 600 }}>{userData.role?.toUpperCase() || 'MEMBER'}</p>
-            </div>
-          </div>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>
-            <p style={{ marginBottom: '0.5rem' }}>FIREBASE CLOUD ACTIVE</p>
-            <div className="progress-container" style={{ height: '8px', background: 'var(--maroon-light)', borderRadius: '0' }}>
-              <div style={{ width: '100%', height: '100%', background: 'var(--cream)' }}></div>
-            </div>
-          </div>
+        <div className="sidebar-footer">
+          <div className="footer-system-label">OPERATIONS CONTROL</div>
+          <div className="footer-system-val">V2.0.0 ACTIVE</div>
         </div>
       </aside>
 
-      <main className="main-content">
-        <header className="main-header">
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', width: '100%' }}>
-            <button className="menu-toggle" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-              {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <Search size={18} style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--maroon)' }} />
-              <input 
-                type="text" 
-                placeholder="Search database..." 
-                className="input-field" 
-                style={{ paddingLeft: '2.5rem', width: '100%' }}
-              />
-            </div>
-          </div>
-          <div className="header-right" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div style={{ textAlign: 'right', minWidth: 'fit-content' }}>
-              <p style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--maroon)' }}>SYSTEM OPERATIONAL</p>
-              <p style={{ fontSize: '0.65rem', fontWeight: 700 }}>{new Date().toLocaleDateString()}</p>
-            </div>
-          </div>
-        </header>
-
-        {renderContent()}
+      {/* Main Panel Content */}
+      <main className="main-content" onClick={() => {
+        setIsMobileExpanded(false)
+        setIsFabOpen(false)
+      }}>
+        <div key={activePage} className="page-transition-wrapper">
+          {renderContent()}
+        </div>
       </main>
-    </div>
-  )
-}
 
-// New Components for Auth and Role management
-
-function LoginScreen({ onLogin }) {
-  return (
-    <div className="login-screen">
-      <div className="login-card">
-        <Rocket size={48} color="var(--maroon)" style={{ marginBottom: '1.5rem' }} />
-        <h1>HITIAN INSIDE</h1>
-        <p>MANAGEMENT PORTAL GATEWAY</p>
-        <div style={{ borderTop: '1px solid var(--maroon)', width: '100%', margin: '1.5rem 0' }}></div>
-        <button className="premium-btn login-btn" onClick={onLogin}>
-          <img src="https://www.google.com/favicon.ico" alt="Google" width="18" />
-          SIGN IN WITH GOOGLE
-        </button>
-        <p style={{ fontSize: '0.7rem', marginTop: '1.5rem', color: '#666', fontWeight: 600 }}>
-          AUTHORIZED PERSONNEL ONLY. SYSTEM ACCESS IS LOGGED.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function VerificationScreen({ user, userData, onRefresh }) {
-  const [name, setName] = useState('')
-  const [roll, setRoll] = useState('')
-  const [year, setYear] = useState('1st Year')
-  const [domain, setDomain] = useState('')
-  const [isSubmitted, setIsSubmitted] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!name || !roll || !domain || isSubmitting) return
-    
-    setIsSubmitting(true)
-    try {
-      // 1. Check Whitelist
-      const whitelistQuery = query(collection(db, 'whitelist'), where('email', '==', user.email))
-      const whitelistSnap = await getDocs(whitelistQuery)
-      
-      const isWhitelisted = !whitelistSnap.empty
-      const initialStatus = isWhitelisted ? 'verified' : 'pending'
-
-      // 2. Create User Profile
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email: user.email,
-        name: name,
-        roll: roll,
-        year: year,
-        domain: domain,
-        role: 'member',
-        status: initialStatus,
-        createdAt: new Date().toISOString()
-      })
-
-      // 3. If whitelisted, auto-create student record for assignments
-      if (isWhitelisted) {
-        // Check if student record already exists
-        const studentQuery = query(collection(db, 'students'), where('roll', '==', roll))
-        const studentSnap = await getDocs(studentQuery)
-        
-        if (studentSnap.empty) {
-          await addDoc(collection(db, 'students'), {
-            name: name,
-            roll: roll,
-            domain: domain,
-            year: year,
-            availability: 'Operational',
-            statusNote: 'Auto-verified via Whitelist'
-          })
-        }
-        
-        // Refresh app state to enter dashboard
-        onRefresh()
-      } else {
-        setIsSubmitted(true)
-      }
-    } catch (error) {
-      console.error("Verification submission failed:", error)
-      alert("Failed to submit request. Please check your internet connection.")
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  if (isSubmitted || userData?.status === 'pending') {
-    return (
-      <div className="login-screen">
-        <div className="login-card">
-          <Clock size={48} color="var(--maroon)" style={{ marginBottom: '1.5rem' }} />
-          <h1>PENDING VERIFICATION</h1>
-          <p>Request submitted for {user.email}</p>
-          <div style={{ padding: '1rem', border: '1px solid var(--maroon)', margin: '1.5rem 0', background: 'var(--cream-dark)' }}>
-            <p style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-              Your account is awaiting approval from Admin.
-              Please contact the development team if this takes more than 24 hours.
-            </p>
-          </div>
-          <button className="premium-btn" onClick={onRefresh}>
-            CHECK STATUS
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="login-screen">
-      <div className="login-card">
-        <ShieldAlert size={48} color="var(--maroon)" style={{ marginBottom: '1.5rem' }} />
-        <h1>LINK ACCOUNT</h1>
-        <p>Initialize your member profile</p>
-        <form onSubmit={handleSubmit} style={{ width: '100%', marginTop: '1.5rem' }}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label className="role-label">CHOOSE YOUR IDENTITY</label>
-            <input 
-              type="text" 
-              placeholder="Full Name" 
-              className="input-field" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label className="role-label">ROLL NUMBER</label>
-              <input 
-                type="text" 
-                placeholder="e.g. 12300..." 
-                className="input-field" 
-                value={roll}
-                onChange={(e) => setRoll(e.target.value)}
-                required
-              />
+      {/* Floating Action Button Speed Dial */}
+      <div className="fab-container">
+        {isFabOpen && (
+          <div className="fab-options">
+            <div className="fab-option-item" onClick={() => { setActiveModal('ADD_MEMBER'); setIsFabOpen(false); }}>
+              <span className="fab-option-label">Add Member</span>
+              <button className="fab-mini-btn"><UserPlus size={18} /></button>
             </div>
-            <div>
-              <label className="role-label">ACADEMIC YEAR</label>
-              <select 
-                className="select-field" 
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                required
-              >
-                <option>1st Year</option>
-                <option>2nd Year</option>
-                <option>3rd Year</option>
-                <option>4th Year</option>
-              </select>
+            <div className="fab-option-item" onClick={() => { setActiveModal('ADD_EVENT'); setIsFabOpen(false); }}>
+              <span className="fab-option-label">Add Event</span>
+              <button className="fab-mini-btn"><FolderPlus size={18} /></button>
             </div>
           </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label className="role-label">DOMAIN / DEPARTMENT</label>
-            <select 
-              className="select-field" 
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              required
-            >
-              <option value="">Select Domain</option>
-              <option value="Photography">Photography</option>
-              <option value="Content Writing">Content Writing</option>
-              <option value="Graphic Design">Graphic Design</option>
-              <option value="Video Editing">Video Editing</option>
-              <option value="Social Media">Social Media</option>
-              <option value="PR">PR</option>
-              <option value="Management">Management</option>
-              <option value="Web/App Developer">Web/App Developer</option>
-            </select>
-          </div>
-          <button type="submit" className="premium-btn" style={{ width: '100%' }} disabled={isSubmitting}>
-            {isSubmitting ? 'COMMUNICATING WITH SERVER...' : 'SUBMIT FOR VERIFICATION'}
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function UserVerificationView({ onAddStudent }) {
-  const [pendingUsers, setPendingUsers] = useState([])
-  const [stagedChanges, setStagedChanges] = useState({}) // { userId: { role: 'member' | 'admin' | 'rejected' } }
-  const [isCommitting, setIsCommitting] = useState(false)
-
-  useEffect(() => {
-    const q = query(collection(db, 'users'), where('status', '==', 'pending'))
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setPendingUsers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })))
-    })
-    return () => unsubscribe()
-  }, [])
-
-  const stageVerify = (userId, asAdmin) => {
-    setStagedChanges(prev => ({
-      ...prev,
-      [userId]: { type: 'verify', role: asAdmin ? 'admin' : 'member' }
-    }))
-  }
-
-  const stageReject = (userId) => {
-    setStagedChanges(prev => ({
-      ...prev,
-      [userId]: { type: 'reject' }
-    }))
-  }
-
-  const clearStage = (userId) => {
-    const newStaged = { ...stagedChanges }
-    delete newStaged[userId]
-    setStagedChanges(newStaged)
-  }
-
-  const handleCommit = async () => {
-    setIsCommitting(true)
-    try {
-      const promises = Object.entries(stagedChanges).map(async ([userId, change]) => {
-        const userToVerify = pendingUsers.find(u => u.id === userId)
-        if (change.type === 'verify') {
-          // Auto-create student record
-          if (onAddStudent) {
-            await onAddStudent({
-              name: userToVerify.name || 'Unknown User',
-              roll: userToVerify.roll || 'NOT SET',
-              domain: userToVerify.domain || 'Photography',
-              year: userToVerify.year || '1st Year',
-              availability: 'Operational',
-              statusNote: 'Automatically verified from registration'
-            })
-          }
-
-          await updateDoc(doc(db, 'users', userId), {
-            status: 'verified',
-            role: change.role,
-            name: change.role === 'admin' ? `${userToVerify.name} [admin]` : userToVerify.name
-          })
-        } else if (change.type === 'reject') {
-          await deleteDoc(doc(db, 'users', userId))
-        }
-      })
-      await Promise.all(promises)
-      setStagedChanges({})
-    } catch (error) {
-      console.error("Batch update failed:", error)
-      alert("Some updates failed. Please try again.")
-    } finally {
-      setIsCommitting(false)
-    }
-  }
-
-  const hasChanges = Object.keys(stagedChanges).length > 0
-
-  return (
-    <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 className="page-title">User Verification</h1>
-          <p className="page-subtitle">Manage system access requests.</p>
-        </div>
-        {hasChanges && (
-          <button 
-            className="premium-btn" 
-            onClick={handleCommit} 
-            disabled={isCommitting}
-            style={{ background: '#d4af37', color: 'black' }}
-          >
-            {isCommitting ? 'COMMITTING...' : `COMMIT ${Object.keys(stagedChanges).length} CHANGES`}
-          </button>
         )}
-      </div>
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>USER</th>
-              <th>DOMAIN</th>
-              <th>REQUESTED ON</th>
-              <th style={{ textAlign: 'right' }}>ACTION</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pendingUsers.length > 0 ? pendingUsers.map(u => {
-              const change = stagedChanges[u.id]
-              
-              return (
-                <tr key={u.id} style={{ opacity: change ? 0.6 : 1, background: change ? 'rgba(212, 175, 55, 0.05)' : 'transparent' }}>
-                  <td>
-                    <p style={{ fontWeight: 800 }}>{u.name}</p>
-                    <p style={{ fontSize: '0.7rem', color: '#666' }}>{u.email}</p>
-                    {change && (
-                      <span style={{ fontSize: '0.6rem', fontWeight: 900, color: 'var(--maroon)' }}>
-                        [STAGED: {change.type.toUpperCase()} {change.role ? `AS ${change.role.toUpperCase()}` : ''}]
-                      </span>
-                    )}
-                  </td>
-                  <td><span className="badge">{u.domain}</span></td>
-                  <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                      {change ? (
-                        <button className="premium-btn" onClick={() => clearStage(u.id)} style={{ background: '#666', fontSize: '0.7rem' }}>
-                          UNDO
-                        </button>
-                      ) : (
-                        <>
-                          <button className="premium-btn" onClick={() => stageVerify(u.id, false)} style={{ background: 'green', fontSize: '0.7rem' }}>
-                            <UserCheck size={14} /> MEMBER
-                          </button>
-                          <button className="premium-btn" onClick={() => stageVerify(u.id, true)} style={{ fontSize: '0.7rem' }}>
-                            <ShieldCheck size={14} /> ADMIN
-                          </button>
-                          <button className="icon-btn delete" onClick={() => stageReject(u.id)}>
-                            <UserX size={16} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            }) : (
-              <tr>
-                <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', fontStyle: 'italic' }}>
-                  No pending verification requests.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function NoAccessView() {
-  return (
-    <div style={{ textAlign: 'center', padding: '5rem' }}>
-      <Lock size={64} color="var(--maroon)" style={{ marginBottom: '1.5rem' }} />
-      <h2 style={{ fontSize: '1.5rem' }}>RESTRICTED ACCESS</h2>
-      <p style={{ color: '#666', fontWeight: 600 }}>You do not have the required clearance level to view this module.</p>
-    </div>
-  )
-}
-
-function NavItem({ icon, label, active, onClick }) {
-  return (
-    <div className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}>
-      {icon}
-      <span>{label}</span>
-    </div>
-  )
-}
-
-function DashboardHome({ studentsCount, eventsCount, user, events, onUpdateEvent }) {
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
-  const isMember = user?.role === 'member'
-
-  // Member-specific stats
-  const memberTasks = events.filter(e => 
-    e.assignments && Object.values(e.assignments).includes(user?.name)
-  )
-  const completedTasks = memberTasks.filter(e => e.checklist?.postDone).length
-  const currentTasks = memberTasks.filter(e => !e.checklist?.postDone)
-
-  if (isMember) {
-    return (
-      <div>
-        <div className="page-header">
-          <h1 className="page-title">Welcome back, {user.name.split(' ')[0]}!</h1>
-          <p className="page-subtitle">Here is your operational overview for today.</p>
-        </div>
-
-        <div className="dashboard-grid">
-          <StatCard icon={<Check />} label="Tasks Completed" value={completedTasks.toString()} trend="All time" up />
-          <StatCard icon={<Clock />} label="Current Tasks" value={currentTasks.length.toString()} trend="Active" up={currentTasks.length === 0} />
-          <StatCard icon={<Calendar />} label="Assigned Events" value={memberTasks.length.toString()} trend="Total" up />
-          <StatCard icon={<TrendingUp />} label="Your Efficiency" value={memberTasks.length > 0 ? `${Math.round((completedTasks / memberTasks.length) * 100)}%` : '0%'} trend="Performance" up />
-        </div>
-
-        <div style={{ marginTop: '2.5rem' }}>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Rocket size={20} /> Your Active Assignments
-          </h2>
-          {currentTasks.length > 0 ? (
-            <div className="dashboard-grid">
-              {currentTasks.map(event => (
-                <MemberTaskCard key={event.id} event={event} onUpdateEvent={onUpdateEvent} isAdmin={isAdmin} />
-              ))}
-            </div>
-          ) : (
-            <div style={{ padding: '3rem', border: '1px dashed var(--maroon)', textAlign: 'center' }}>
-              <p style={{ fontWeight: 600, color: '#666' }}>No active assignments. Enjoy the downtime!</p>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">Management Overview</h1>
-        <p className="page-subtitle">Administrative dashboard for club operations.</p>
-      </div>
-
-      <div className="dashboard-grid">
-        <StatCard icon={<Users />} label="Total Students" value={studentsCount.toLocaleString()} trend="+12%" up />
-        <StatCard icon={<Calendar />} label="Active Events" value={eventsCount.toString()} trend="+2" up />
-        <StatCard icon={<TrendingUp />} label="System Load" value="LOW" trend="STABLE" up />
-        <StatCard icon={<Clock />} label="Database" value="LOCAL" trend="SYNCED" up={true} />
-      </div>
-
-      <div style={{ marginTop: '2rem' }}>
-        <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem', textTransform: 'uppercase' }}>Recent System Activity</h2>
-        <div className="activity-list">
-          <ActivityItem title="Persistence engine initialized" user="System" time="Just now" tag="SYSTEM" />
-          <ActivityItem title="Student directory loaded" user="System" time="Just now" tag="DATABASE" />
-          <ActivityItem title="Event logistics synchronized" user="System" time="Just now" tag="EVENT" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MemberTaskCard({ event, onUpdateEvent, isAdmin }) {
-  const [isManaging, setIsManaging] = useState(false)
-
-  const checklistValues = event.checklist ? Object.values(event.checklist) : []
-  const doneTasks = checklistValues.filter(Boolean).length
-  const totalTasks = checklistValues.length || 1
-  const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
-
-  return (
-    <div className="feature-card" style={{ cursor: 'pointer' }} onClick={() => setIsManaging(true)}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-        <span className="badge">{progress}% COMPLETE</span>
-        <span className="badge" style={{ background: 'var(--maroon)', color: 'white' }}>ACTIVE</span>
-      </div>
-      <h3 style={{ textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        {event.name}
-        {event.checklist?.postDone && <ShieldCheck size={18} color="#4caf50" />}
-      </h3>
-      <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#666', marginBottom: '1rem' }}>
-        LOC: {event.location} | DATE: {event.date}
-      </p>
-      <div className="progress-container">
-        <div className="progress-bar" style={{ width: `${progress}%` }}></div>
-      </div>
-      
-      <button 
-        className="premium-btn" 
-        style={{ width: '100%', marginTop: '1.5rem', fontSize: '0.75rem' }}
-        onClick={(e) => {
-          e.stopPropagation()
-          setIsManaging(true)
-        }}
-      >
-        MANAGE TASKS
-      </button>
-
-      {isManaging && (
-        <ManageEventModal 
-          event={event}
-          onClose={() => setIsManaging(false)}
-          onUpdate={(updated) => {
-            onUpdateEvent(event.id, updated)
-            setIsManaging(false)
-          }}
-          students={[]} // Not needed for member task management
-          events={[]} // Not needed for member task management
-          isAdmin={isAdmin}
-        />
-      )}
-    </div>
-  )
-}
-
-function StatCard({ icon, label, value, trend, up }) {
-  return (
-    <div className="stat-card">
-      <div style={{ color: 'var(--maroon)', marginBottom: '0.5rem' }}>{icon}</div>
-      <div className="stat-label">{label}</div>
-      <div className="stat-value">{value}</div>
-      <div className={`stat-trend ${up ? 'trend-up' : 'trend-down'}`}>
-        {trend}
-      </div>
-    </div>
-  )
-}
-
-function ActivityItem({ title, user, time, tag }) {
-  return (
-    <div className="activity-item">
-      <div style={{ width: '8px', height: '8px', background: 'var(--maroon)' }}></div>
-      <div style={{ flex: 1 }}>
-        <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{title}</p>
-        <p style={{ fontSize: '0.75rem', color: '#666' }}>SOURCE: {user} | {time}</p>
-      </div>
-      <span className="badge">{tag}</span>
-    </div>
-  )
-}
-
-function StudentsView({ students, events, onAddStudent, onEditStudent, onDeleteStudent, readOnly }) {
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingStudent, setEditingStudent] = useState(null)
-
-  return (
-    <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 className="page-title">Student Directory</h1>
-          <p className="page-subtitle">Database of all registered club members.</p>
-        </div>
-        {/* Manual student entry removed per requirements - now automated via verification */}
-        {/* !readOnly && onAddStudent && (
-          <button className="premium-btn" onClick={() => {
-            setEditingStudent(null)
-            setIsModalOpen(true)
-          }}>
-            + ADD NEW RECORD
-          </button>
-        ) */}
-      </div>
-
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>NAME</th>
-              <th>ROLL NUMBER</th>
-              <th>DOMAIN</th>
-              <th>AVAILABILITY</th>
-              <th>WORKLOAD</th>
-              {!readOnly && <th style={{ textAlign: 'right' }}>ACTIONS</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {students.length > 0 ? students.map((student) => (
-              <tr key={student.id}>
-                <td style={{ fontWeight: 700 }}>{student.name}</td>
-                <td>{student.roll}</td>
-                <td><span className="badge">{student.domain}</span></td>
-                <td>
-                  <span 
-                    className={`badge ${(!student.availability || student.availability === 'Operational') ? 'success' : 'warning'}`} 
-                    title={student.statusNote}
-                    style={{ cursor: student.statusNote ? 'help' : 'default' }}
-                  >
-                    {student.availability || 'Operational'}
-                  </span>
-                </td>
-                <td>
-                  <WorkloadBadge studentName={student.name} events={events} />
-                </td>
-                {!readOnly && (
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                      {onEditStudent && (
-                        <button className="icon-btn" onClick={() => {
-                          setEditingStudent(student)
-                          setIsModalOpen(true)
-                        }}>
-                          <Edit2 size={16} />
-                        </button>
-                      )}
-                      {onDeleteStudent && (
-                        <button className="icon-btn delete" onClick={() => onDeleteStudent(student.id)}>
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                )}
-              </tr>
-            )) : (
-              <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', fontStyle: 'italic' }}>
-                  No records found in database.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {isModalOpen && (
-        <StudentModal 
-          student={editingStudent}
-          onClose={() => setIsModalOpen(false)} 
-          onSubmit={(data) => {
-            if (editingStudent) {
-              onEditStudent({ ...data, id: editingStudent.id })
-            } else {
-              onAddStudent(data)
-            }
-            setIsModalOpen(false)
-          }} 
-        />
-      )}
-    </div>
-  )
-}
-
-function StudentModal({ student, onClose, onSubmit }) {
-  const [formData, setFormData] = useState({
-    name: student?.name || '',
-    roll: student?.roll || '',
-    domain: student?.domain || 'Photography',
-    year: student?.year || '1st Year',
-    availability: student?.availability || 'Operational',
-    statusNote: student?.statusNote || ''
-  })
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <button 
-          style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800 }}
-          onClick={onClose}
+          className={`fab-trigger ${isFabOpen ? 'active' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsFabOpen(!isFabOpen)
+          }}
         >
-          [CLOSE]
+          <Plus size={24} />
         </button>
-        <h2 style={{ marginBottom: '1.5rem', textTransform: 'uppercase' }}>
-          {student ? 'Edit Record' : 'Create New Record'}
-        </h2>
-        
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">FULL NAME</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              required 
-              value={formData.name}
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">ROLL NUMBER</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              required 
-              value={formData.roll}
-              onChange={(e) => setFormData({...formData, roll: e.target.value})}
-            />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label">DOMAIN</label>
-              <select 
-                className="select-field"
-                value={formData.domain}
-                onChange={(e) => setFormData({...formData, domain: e.target.value})}
-              >
-                <option>Photography</option>
-                <option>Content Writing</option>
-                <option>Social Media</option>
-                <option>Video Editing</option>
-                <option>Graphic Design</option>
-                <option>Management</option>
-                <option>PR & Outreach</option>
-                <option>Web/App Developer</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label">AVAILABILITY STATUS</label>
-              <select 
-                className="select-field"
-                value={formData.availability}
-                onChange={(e) => setFormData({...formData, availability: e.target.value})}
-              >
-                <option>Operational</option>
-                <option>On Leave</option>
-                <option>Exam Period</option>
-                <option>Medical Leave</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">STATUS NOTE</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="Optional details..."
-                value={formData.statusNote}
-                onChange={(e) => setFormData({...formData, statusNote: e.target.value})}
-              />
-            </div>
-          </div>
-          
-          <button type="submit" className="premium-btn" style={{ width: '100%', marginTop: '1rem' }}>
-            {student ? 'UPDATE RECORD' : 'COMMIT RECORD'}
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function EventsView({ events, students, onAddEvent, onUpdateEvent, onDeleteEvent, user }) {
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState(null)
-
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
-  const isSuperadmin = user?.role === 'superadmin'
-
-  // Members only see events they are assigned to (Primary or Backup)
-  const filteredEvents = isAdmin ? events : events.filter(event => {
-    const isPrimary = event.assignments && Object.values(event.assignments).includes(user?.name);
-    const isBackup = event.backups && Object.values(event.backups).some(arr => Array.isArray(arr) && arr.includes(user?.name));
-    return isPrimary || isBackup;
-  })
-
-  return (
-    <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 className="page-title">Event Logistics</h1>
-          <p className="page-subtitle">Operations and scheduling for club events.</p>
-        </div>
-        {onAddEvent && (
-          <button className="premium-btn" onClick={() => setIsCreateModalOpen(true)}>
-            + INITIALIZE EVENT
-          </button>
-        )}
       </div>
 
-      <div className="dashboard-grid">
-        {filteredEvents.length > 0 ? filteredEvents.map((event) => {
-          const checklistValues = event.checklist ? Object.values(event.checklist) : []
-          const doneTasks = checklistValues.filter(Boolean).length
-          const totalTasks = checklistValues.length || 1
-          const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
-
+      {/* Mobile Bottom Navigation */}
+      <nav className="mobile-bottom-nav">
+        {navItems.map((item) => {
+          const IconComponent = item.icon
           return (
-            <div key={event.id} className="feature-card" onClick={() => setSelectedEvent(event)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <span className="badge">
-                  {progress}% COMPLETE
-                </span>
-                {onDeleteEvent && (
-                  <button 
-                    className="icon-btn delete" 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteEvent(event.id)
-                    }}
-                    style={{ padding: '4px' }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-              <h3 style={{ textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {event.name}
-                {event.checklist?.postDone && <ShieldCheck size={18} color="#4caf50" />}
-              </h3>
-              <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#666', marginBottom: '1rem' }}>
-                LOC: {event.location} | DATE: {event.date}
-              </p>
-              <div className="progress-container">
-                <div className="progress-bar" style={{ width: `${progress}%` }}></div>
-              </div>
+            <div 
+              key={item.id} 
+              className={`mobile-bottom-nav-item ${activePage === item.id ? 'active' : ''}`}
+              onClick={() => setActivePage(item.id)}
+            >
+              <IconComponent size={20} />
+              <span className="mobile-bottom-nav-label">{item.label}</span>
             </div>
           )
-        }) : (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', border: '1px dashed var(--maroon)' }}>
-            {isAdmin ? 'No active events in the system.' : 'No assignments found for your profile.'}
-          </div>
-        )}
-      </div>
+        })}
+      </nav>
 
-      {isCreateModalOpen && (
-        <CreateEventModal 
-          onClose={() => setIsCreateModalOpen(false)}
-          onSubmit={(data) => {
-            onAddEvent(data)
-            setIsCreateModalOpen(false)
+      {/* 2. Modals Implementation */}
+      {activeModal === 'ADD_EVENT' && (
+        <AddEventModal 
+          onClose={() => setActiveModal(null)} 
+          onAdd={async (newEvent) => {
+            try {
+              const { data, error } = await supabase
+                .from('events')
+                .insert([newEvent])
+                .select()
+              if (error) throw error
+              if (data && data[0]) {
+                setEvents([data[0], ...events])
+              }
+              setActiveModal(null)
+            } catch (err) {
+              alert('Error saving event to Supabase: ' + err.message)
+            }
           }}
         />
       )}
 
-      {selectedEvent && (
-        <ManageEventModal 
-          event={selectedEvent}
-          students={students}
-          events={events}
-          onClose={() => setSelectedEvent(null)}
-          onUpdate={(updatedEvent) => {
-            onUpdateEvent(selectedEvent.id, updatedEvent)
-            setSelectedEvent(updatedEvent)
+      {activeModal === 'ADD_MEMBER' && (
+        <AddMemberModal 
+          onClose={() => setActiveModal(null)} 
+          onAdd={async (newMember) => {
+            try {
+              const { data, error } = await supabase
+                .from('members')
+                .insert([newMember])
+                .select()
+              if (error) throw error
+              if (data && data[0]) {
+                setMembers([...members, data[0]].sort((a, b) => a.name.localeCompare(b.name)))
+              }
+              setActiveModal(null)
+            } catch (err) {
+              alert('Error registering member in Supabase: ' + err.message)
+            }
           }}
-          isAdmin={isAdmin}
+        />
+      )}
+
+      {activeModal === 'EDIT_CELL' && editingCellInfo && (
+        <EditCellModal 
+          cellInfo={editingCellInfo} 
+          events={events}
+          members={members}
+          getDomainFromKey={getDomainFromKey}
+          onClose={() => {
+            setActiveModal(null)
+            setEditingCellInfo(null)
+          }} 
+          onSave={async (updatedPersonnel) => {
+            try {
+              const val = updatedPersonnel.length > 0 ? updatedPersonnel : null
+              const { error } = await supabase
+                .from('events')
+                .update({ [editingCellInfo.domainKey]: val })
+                .eq('id', editingCellInfo.eventId)
+              if (error) throw error
+
+              setEvents(events.map(ev => {
+                if (ev.id === editingCellInfo.eventId) {
+                  return { ...ev, [editingCellInfo.domainKey]: val }
+                }
+                return ev
+              }))
+              setActiveModal(null)
+              setEditingCellInfo(null)
+            } catch (err) {
+              alert('Error saving assignments: ' + err.message)
+            }
+          }}
         />
       )}
     </div>
   )
 }
 
-function CreateEventModal({ onClose, onSubmit }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    location: '',
-    date: '',
-    time: ''
-  })
+// ================= MODAL COMPONENTS =================
+
+function AddEventModal({ onClose, onAdd }) {
+  const [name, setName] = useState('')
+  const [date, setDate] = useState('')
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    if (!name.trim()) return
+
+    const randomId = `E-${Math.floor(1000 + Math.random() * 9000)}`
+    const newEvent = {
+      id: randomId,
+      name: name.trim(),
+      date: date || new Date().toISOString().split('T')[0],
+      photographer: null,
+      graphic: null,
+      writer: null,
+      videographer: null,
+      editor: null,
+      pr: null,
+      dev: null
+    }
+    onAdd(newEvent)
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <button style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800 }} onClick={onClose}>
-          [CLOSE]
-        </button>
-        <h2 style={{ marginBottom: '1.5rem', textTransform: 'uppercase' }}>Initialize New Event</h2>
-        <form onSubmit={handleSubmit}>
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div className="modal-header">
+          <h3>Create New Event</h3>
+          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-group">
-            <label className="form-label">EVENT TITLE</label>
-            <input type="text" className="input-field" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+            <label>Event Name *</label>
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="e.g. Autumn Fest 2026"
+              required 
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
+            />
           </div>
           <div className="form-group">
-            <label className="form-label">LOCATION</label>
-            <input type="text" className="input-field" required value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} />
+            <label>Event Date (Optional)</label>
+            <input 
+              type="date" 
+              className="form-input" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+            />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label">DATE</label>
-              <input type="date" className="input-field" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">TIME</label>
-              <input type="time" className="input-field" required value={formData.time} onChange={(e) => setFormData({...formData, time: e.target.value})} />
-            </div>
+          <div className="modal-actions">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Add Event</button>
           </div>
-          <button type="submit" className="premium-btn" style={{ width: '100%', marginTop: '1rem' }}>START OPERATION</button>
         </form>
       </div>
     </div>
   )
 }
 
-function ManageEventModal({ event, students, events, onClose, onUpdate, isAdmin }) {
-  const [localEvent, setLocalEvent] = useState(event)
-  const [isUpdating, setIsUpdating] = useState(false)
+function AddMemberModal({ onClose, onAdd }) {
+  const [name, setName] = useState('')
+  const [year, setYear] = useState('1st Year')
+  const [domain, setDomain] = useState('Photographer')
+  const [completed, setCompleted] = useState(0)
 
-  const canUpdate = !!onUpdate
-  const readOnly = !canUpdate
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!name.trim()) return
 
-  const assignments = localEvent.assignments || {
-    photographer: 'Unassigned',
-    contentWriter: 'Unassigned',
-    pr: 'Unassigned',
-    videoEditor: 'Unassigned',
-    graphicDesigner: 'Unassigned',
-    webDev: 'Unassigned'
-  }
-
-  const backups = localEvent.backups || {
-    photographer: [],
-    contentWriter: [],
-    pr: [],
-    videoEditor: [],
-    graphicDesigner: [],
-    webDev: []
-  }
-
-  const checklist = localEvent.checklist || {
-    membersAssigned: false,
-    photosSorted: false,
-    photosVerified: false,
-    graphicDesignDone: false,
-    postVerified: false,
-    postDone: false
-  }
-
-  const toggleCheck = (key) => {
-    if (readOnly) return
-    setLocalEvent({
-      ...localEvent,
-      checklist: {
-        ...checklist,
-        [key]: !checklist[key]
-      }
-    })
-  }
-
-  const setAssignee = (role, name) => {
-    if (readOnly) return
-    const updatedEventData = {
-      ...localEvent,
-      assignments: {
-        ...assignments,
-        [role]: name
-      }
+    const newMember = {
+      name: name.trim(),
+      year,
+      domain,
+      completed: parseInt(completed) || 0
     }
-    const allAssigned = Object.values(updatedEventData.assignments).every(val => val !== 'Unassigned')
-    updatedEventData.checklist = { ...checklist, membersAssigned: allAssigned }
-    setLocalEvent(updatedEventData)
+    onAdd(newMember)
   }
-
-  const toggleBackup = (role, name) => {
-    if (readOnly) return
-    const currentBackups = backups[role] || []
-    const newBackups = currentBackups.includes(name)
-      ? currentBackups.filter(n => n !== name)
-      : [...currentBackups, name]
-    
-    setLocalEvent({
-      ...localEvent,
-      backups: {
-        ...backups,
-        [role]: newBackups
-      }
-    })
-  }
-
-  const handleCommitChanges = async () => {
-    setIsUpdating(true)
-    try {
-      await onUpdate(localEvent)
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-
-  const hasChanges = JSON.stringify(localEvent) !== JSON.stringify(event)
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '850px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
-        <header style={{ borderBottom: '2px solid var(--maroon)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.75rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {localEvent.name}
-            {checklist.postDone && <ShieldCheck size={24} color="#4caf50" />}
-          </h2>
-          <p style={{ fontWeight: 600 }}>LOC: {localEvent.location} | DATE: {localEvent.date} | TIME: {localEvent.time}</p>
-          <button style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800 }} onClick={onClose}>
-            [CLOSE]
-          </button>
-        </header>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem' }}>
-          <section>
-            <h3 style={{ fontSize: '1rem', textTransform: 'uppercase', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Users size={18} /> Personnel Assignment
-            </h3>
-            <div className="assignment-grid" style={{ gridTemplateColumns: '1fr' }}>
-               <AssignmentSelector 
-                role="Photographer" 
-                domain="Photography"
-                value={assignments.photographer} 
-                backups={backups.photographer}
-                students={students} 
-                events={events}
-                onSelect={(val) => setAssignee('photographer', val)} 
-                onToggleBackup={(val) => toggleBackup('photographer', val)}
-                readOnly={readOnly || !isAdmin}
-              />
-              <AssignmentSelector 
-                role="Content Writer" 
-                domain="Content Writing"
-                value={assignments.contentWriter} 
-                backups={backups.contentWriter}
-                students={students} 
-                events={events}
-                onSelect={(val) => setAssignee('contentWriter', val)} 
-                onToggleBackup={(val) => toggleBackup('contentWriter', val)}
-                readOnly={readOnly || !isAdmin}
-              />
-              <AssignmentSelector 
-                role="PR & Outreach" 
-                domain="PR & Outreach"
-                value={assignments.pr} 
-                backups={backups.pr}
-                students={students} 
-                events={events}
-                onSelect={(val) => setAssignee('pr', val)} 
-                onToggleBackup={(val) => toggleBackup('pr', val)}
-                readOnly={readOnly || !isAdmin}
-              />
-              <AssignmentSelector 
-                role="Video Editor" 
-                domain="Video Editing"
-                value={assignments.videoEditor} 
-                backups={backups.videoEditor}
-                students={students} 
-                events={events}
-                onSelect={(val) => setAssignee('videoEditor', val)} 
-                onToggleBackup={(val) => toggleBackup('videoEditor', val)}
-                readOnly={readOnly || !isAdmin}
-              />
-              <AssignmentSelector 
-                role="Graphic Designer" 
-                domain="Graphic Design"
-                value={assignments.graphicDesigner} 
-                backups={backups.graphicDesigner}
-                students={students} 
-                events={events}
-                onSelect={(val) => setAssignee('graphicDesigner', val)} 
-                onToggleBackup={(val) => toggleBackup('graphicDesigner', val)}
-                readOnly={readOnly || !isAdmin}
-              />
-              <AssignmentSelector 
-                role="Web Developer" 
-                domain="Web/App Developer"
-                value={assignments.webDev} 
-                backups={backups.webDev}
-                students={students} 
-                events={events}
-                onSelect={(val) => setAssignee('webDev', val)} 
-                onToggleBackup={(val) => toggleBackup('webDev', val)}
-                readOnly={readOnly || !isAdmin}
-              />
-            </div>
-          </section>
-
-          <section>
-            <h3 style={{ fontSize: '1rem', textTransform: 'uppercase', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Filter size={18} /> Workflow Tracking
-            </h3>
-            <div className="checklist">
-              <ChecklistItem label="PERSONNEL ASSIGNED" isDone={checklist.membersAssigned} onToggle={() => toggleCheck('membersAssigned')} readOnly={readOnly} />
-              <ChecklistItem label="PHOTO SORTING" isDone={checklist.photosSorted} onToggle={() => toggleCheck('photosSorted')} readOnly={readOnly} />
-              <ChecklistItem label="PHOTO VERIFICATION" isDone={checklist.photosVerified} onToggle={() => toggleCheck('photosVerified')} readOnly={readOnly} />
-              <ChecklistItem label="GRAPHIC PRODUCTION" isDone={checklist.graphicDesignDone} onToggle={() => toggleCheck('graphicDesignDone')} readOnly={readOnly} />
-              <ChecklistItem label="POST VERIFICATION" isDone={checklist.postVerified} onToggle={() => toggleCheck('postVerified')} readOnly={readOnly} />
-              <ChecklistItem label="FINAL POST COMPLETE" isDone={checklist.postDone} onToggle={() => toggleCheck('postDone')} readOnly={readOnly} />
-            </div>
-            
-            <div style={{ marginTop: '2rem', padding: '1rem', background: 'var(--maroon)', color: 'white' }}>
-              <p style={{ fontWeight: 800, fontSize: '0.75rem', marginBottom: '0.5rem' }}>STATUS REPORT</p>
-              <h4 style={{ color: 'white', fontSize: '1.25rem' }}>
-                {checklist.postDone ? 'OPERATION COMPLETE' : 'IN PROGRESS'}
-              </h4>
-            </div>
-
-            {hasChanges && (
-              <button 
-                className="premium-btn" 
-                style={{ width: '100%', marginTop: '1rem', background: '#d4af37', color: 'black' }}
-                onClick={handleCommitChanges}
-                disabled={isUpdating}
-              >
-                {isUpdating ? 'SYNCHRONIZING...' : 'COMMIT ALL CHANGES'}
-              </button>
-            )}
-          </section>
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div className="modal-header">
+          <h3>Register New Member</h3>
+          <button className="modal-close" onClick={onClose}><X size={20} /></button>
         </div>
+        <form onSubmit={handleSubmit} className="modal-form">
+          <div className="form-group">
+            <label>Member Name *</label>
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="e.g. Sayan Maity"
+              required 
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
+            />
+          </div>
+          <div className="form-group">
+            <label>Academic Year</label>
+            <select className="form-input" value={year} onChange={(e) => setYear(e.target.value)}>
+              <option>1st Year</option>
+              <option>2nd Year</option>
+              <option>3rd Year</option>
+              <option>4th Year</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Domain</label>
+            <select className="form-input" value={domain} onChange={(e) => setDomain(e.target.value)}>
+              <option>Photographer</option>
+              <option>Graphic Designer</option>
+              <option>Content Writter</option>
+              <option>Video Editor</option>
+              <option>Public Relation</option>
+              <option>Web Developer</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Initial Tasks Completed</label>
+            <input 
+              type="number" 
+              min="0"
+              className="form-input" 
+              value={completed} 
+              onChange={(e) => setCompleted(e.target.value)} 
+            />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Add Member</button>
+          </div>
+        </form>
       </div>
     </div>
   )
 }
 
-function AssignmentSelector({ role, domain, value, backups = [], students, events, onSelect, onToggleBackup, readOnly }) {
-  const filteredStudents = students.filter(s => s.domain === domain)
+function EditCellModal({ cellInfo, events, members, getDomainFromKey, onClose, onSave }) {
+  const { eventId, domainKey } = cellInfo
+  const currentEvent = events.find(ev => ev.id === eventId)
+  const targetDomainName = getDomainFromKey(domainKey)
   
-  return (
-    <div className="assignment-item" style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #ddd' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h4 style={{ fontSize: '0.8rem', color: '#666', textTransform: 'uppercase' }}>{role}</h4>
-        <span style={{ fontSize: '0.7rem', background: '#eee', padding: '2px 6px', borderRadius: '4px' }}>{domain}</span>
-      </div>
-
-      <div style={{ marginBottom: '1rem' }}>
-        <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--maroon)', display: 'block', marginBottom: '0.5rem' }}>PRIMARY ASSIGNMENT</label>
-        <select 
-          className="select-field" 
-          value={value} 
-          onChange={(e) => onSelect(e.target.value)}
-          disabled={readOnly}
-          style={{ width: '100%', border: value === 'Unassigned' ? '2px dashed #ccc' : '1px solid #000' }}
-        >
-          <option value="Unassigned">Unassigned</option>
-          {filteredStudents.map(s => {
-            const pendingCount = events.filter(e => !e.checklist.postDone && Object.values(e.assignments).includes(s.name)).length
-            const isAvailable = s.availability === 'AVAILABLE'
-            return (
-              <option key={s.id} value={s.name}>
-                {s.name} ({pendingCount} Active) {!isAvailable ? `[${s.availability}]` : ''}
-              </option>
-            )
-          })}
-        </select>
-      </div>
-
-      <div>
-        <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--maroon)', display: 'block', marginBottom: '0.5rem' }}>BACKUP / SUPPORT (MULTI-SELECT)</label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-          {filteredStudents.map(s => {
-            const isAssignedAsPrimary = value === s.name
-            if (isAssignedAsPrimary) return null
-            const isBackup = backups.includes(s.name)
-            return (
-              <button
-                key={s.id}
-                onClick={() => onToggleBackup(s.name)}
-                disabled={readOnly}
-                type="button"
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  border: isBackup ? '1px solid var(--maroon)' : '1px solid #ddd',
-                  background: isBackup ? 'var(--maroon)' : 'white',
-                  color: isBackup ? 'white' : '#666',
-                  cursor: readOnly ? 'default' : 'pointer'
-                }}
-              >
-                {s.name}
-              </button>
-            )
-          })}
-          {filteredStudents.length === 0 && <p style={{ fontSize: '0.7rem', color: '#999' }}>No students found in this domain.</p>}
-        </div>
-      </div>
-    </div>
+  // Get members registered for this target domain
+  const domainFilteredMembers = members.filter(m => m.domain === targetDomainName)
+  
+  // Local state for assignees list
+  const [localPersonnelList, setLocalPersonnelList] = useState(
+    currentEvent[domainKey] ? [...currentEvent[domainKey]] : []
   )
-}
-
-function ChecklistItem({ label, isDone, onToggle, readOnly }) {
-  return (
-    <div 
-      className={`checklist-item ${isDone ? 'done' : ''}`} 
-      onClick={!readOnly ? onToggle : undefined}
-      style={{ cursor: readOnly ? 'default' : 'pointer', opacity: readOnly ? 0.8 : 1 }}
-    >
-      <div className="checkbox">
-        {isDone && <Check size={14} />}
-      </div>
-      <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{label}</span>
-    </div>
-  )
-}
-
-function WorkloadBadge({ studentName, events, showIcon }) {
-  const activeTasks = events.filter(e => 
-    !e.checklist.postDone && Object.values(e.assignments).includes(studentName)
-  ).length
-
-  let status = 'LOW'
-  let color = '#4caf50'
-  if (activeTasks >= 3) { status = 'HIGH'; color = '#f44336' }
-  else if (activeTasks >= 2) { status = 'MEDIUM'; color = '#ff9800' }
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', fontWeight: 800, color }}>
-      {showIcon && <AlertTriangle size={14} />}
-      {activeTasks} ACTIVE ({status})
-    </div>
-  )
-}
-
-function ProfileView({ user, onLogout, updateMemberStatus, updateProfileInfo }) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [editData, setEditData] = useState({
-    name: user?.name || '',
-    domain: user?.domain || '',
-    roll: user?.roll || ''
-  })
-
-  const handleSave = async () => {
-    await updateProfileInfo(editData)
-    setIsEditing(false)
-  }
-
-  return (
-    <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 className="page-title">Operational Profile</h1>
-          <p className="page-subtitle">Personal record and access credentials.</p>
-        </div>
-        <button 
-          className="premium-btn" 
-          onClick={() => setIsEditing(!isEditing)}
-          style={{ background: isEditing ? '#666' : 'var(--maroon)' }}
-        >
-          {isEditing ? '[CANCEL EDIT]' : '[EDIT PROFILE]'}
-        </button>
-      </div>
-
-      <div className="stat-card" style={{ maxWidth: '600px' }}>
-        <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '2rem' }}>
-          <div style={{ width: '80px', height: '80px', background: 'var(--maroon)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 800 }}>
-            {user?.name?.[0] || 'U'}
-          </div>
-          <div style={{ flex: 1 }}>
-            {isEditing ? (
-              <div className="form-group">
-                <label className="form-label">FULL NAME</label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  value={editData.name}
-                  onChange={(e) => setEditData({...editData, name: e.target.value})}
-                />
-              </div>
-            ) : (
-              <>
-                <h2 style={{ fontSize: '1.5rem', textTransform: 'uppercase' }}>{user?.name || 'User'}</h2>
-                <p style={{ fontWeight: 700, color: 'var(--maroon)' }}>{user?.role?.toUpperCase() || 'MEMBER'}</p>
-                <p style={{ color: '#666' }}>{user?.email}</p>
-              </>
-            )}
-          </div>
-        </div>
-
-        {isEditing ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label">DOMAIN</label>
-              <select 
-                className="select-field"
-                value={editData.domain}
-                onChange={(e) => setEditData({...editData, domain: e.target.value})}
-              >
-                <option>Photography</option>
-                <option>Content Writing</option>
-                <option>Social Media</option>
-                <option>Video Editing</option>
-                <option>Graphic Design</option>
-                <option>Management</option>
-                <option>PR & Outreach</option>
-                <option>Web/App Developer</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">ROLL NUMBER</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                value={editData.roll}
-                onChange={(e) => setEditData({...editData, roll: e.target.value})}
-              />
-            </div>
-            <button 
-              className="premium-btn" 
-              onClick={handleSave}
-              style={{ gridColumn: 'span 2', marginTop: '1rem', background: '#d4af37', color: 'black' }}
-            >
-              SAVE PROFILE CHANGES
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <ProfileField label="NAME" value={user?.name?.toUpperCase()} />
-            <ProfileField label="DOMAIN" value={user?.domain?.toUpperCase()} />
-            <ProfileField label="ROLL NUMBER" value={user?.roll || 'NOT SET'} />
-            <ProfileField label="CLEARANCE" value={`LEVEL ${user?.role === 'superadmin' ? '4' : user?.role === 'admin' ? '3' : '1'}`} />
-          </div>
-        )}
-
-        {!isEditing && (
-          <div style={{ marginTop: '2rem', borderTop: '1px solid var(--maroon)', paddingTop: '1.5rem' }}>
-            <h3 style={{ fontSize: '0.9rem', marginBottom: '1rem', textTransform: 'uppercase' }}>Update Your Availability</h3>
-            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '1rem' }}>Inform admins about your current working status.</p>
-            <ProfileStatusUpdater user={user} updateMemberStatus={updateMemberStatus} />
-          </div>
-        )}
-
-        <button 
-          className="premium-btn" 
-          onClick={onLogout}
-          style={{ width: '100%', marginTop: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-        >
-          <LogOut size={18} /> TERMINATE SESSION
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function ProfileStatusUpdater({ user, updateMemberStatus }) {
-  const [localAvailability, setLocalAvailability] = useState(user?.availability || 'Operational')
-  const [localStatusNote, setLocalStatusNote] = useState(user?.statusNote || '')
-  const [isUpdating, setIsUpdating] = useState(false)
-
-  const handleUpdate = async () => {
-    setIsUpdating(true)
-    await updateMemberStatus(localAvailability, localStatusNote)
-    setIsUpdating(false)
-  }
-
-  const hasChanges = localAvailability !== (user?.availability || 'Operational') || 
-                     localStatusNote !== (user?.statusNote || '')
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-      <div className="form-group">
-        <label className="form-label">CURRENT STATUS</label>
-        <select 
-          className="select-field"
-          value={localAvailability}
-          onChange={(e) => setLocalAvailability(e.target.value)}
-        >
-          <option>Operational</option>
-          <option>On Leave</option>
-          <option>Exam Period</option>
-          <option>Medical Leave</option>
-        </select>
-      </div>
-      <div className="form-group">
-        <label className="form-label">STATUS NOTE</label>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <input 
-            type="text" 
-            className="input-field" 
-            placeholder="e.g. Exams until Friday"
-            value={localStatusNote}
-            onChange={(e) => setLocalStatusNote(e.target.value)}
-          />
-          <button 
-            className="premium-btn" 
-            onClick={handleUpdate}
-            disabled={!hasChanges || isUpdating}
-            style={{ whiteSpace: 'nowrap', fontSize: '0.7rem', padding: '0 1rem' }}
-          >
-            {isUpdating ? 'SAVING...' : 'UPDATE STATUS'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ProfileField({ label, value }) {
-  return (
-    <div style={{ marginBottom: '1rem' }}>
-      <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--maroon)', marginBottom: '0.25rem' }}>{label}</label>
-      <div style={{ padding: '0.75rem', border: '1px solid var(--maroon)', fontWeight: 600 }}>{value}</div>
-    </div>
-  )
-}
-
-function PerformanceSheet({ students, events }) {
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-
-  const filteredEvents = events.filter(event => {
-    if (!startDate && !endDate) return true;
-    const eventDate = new Date(event.date);
-    const start = startDate ? new Date(startDate) : new Date('1970-01-01');
-    const end = endDate ? new Date(endDate) : new Date('2099-12-31');
-    return eventDate >= start && eventDate <= end;
-  });
-
-  const memberStats = students.map(student => {
-    const studentEvents = filteredEvents.filter(event => {
-      const isPrimary = event.assignments && Object.values(event.assignments).includes(student.name);
-      const isBackup = event.backups && Object.values(event.backups).some(arr => Array.isArray(arr) && arr.includes(student.name));
-      return isPrimary || isBackup;
-    });
-    
-    const completedTasks = studentEvents.filter(event => event.checklist?.postDone).length;
-    const pendingTasks = studentEvents.length - completedTasks;
-
-    return {
-      name: student.name,
-      roll: student.roll,
-      domain: student.domain,
-      totalEvents: studentEvents.length,
-      completed: completedTasks,
-      pending: pendingTasks,
-      efficiency: studentEvents.length > 0 
-        ? Math.round((completedTasks / studentEvents.length) * 100) 
-        : 0
-    };
-  });
-
-  const exportToCSV = () => {
-    const headers = ['Name', 'Roll Number', 'Domain', 'Total Events', 'Completed', 'Pending', 'Efficiency %'];
-    const rows = memberStats.map(stat => [
-      `"${stat.name}"`,
-      `"${stat.roll}"`,
-      `"${stat.domain}"`,
-      stat.totalEvents,
-      stat.completed,
-      stat.pending,
-      `"${stat.efficiency}%"`
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Hitian_Performance_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  return (
-    <div className="performance-sheet">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 className="page-title">Operational Sheets</h1>
-          <p className="page-subtitle">Workforce distribution and performance metrics.</p>
-        </div>
-        <button className="premium-btn" onClick={exportToCSV} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Download size={18} /> EXPORT EXCEL
-        </button>
-      </div>
-
-      <div className="stat-card" style={{ marginBottom: '2rem', display: 'flex', gap: '2rem', alignItems: 'flex-end' }}>
-        <div style={{ flex: 1 }}>
-          <label className="role-label" style={{ marginBottom: '0.5rem', display: 'block' }}>START DATE</label>
-          <div style={{ position: 'relative' }}>
-            <CalendarDays size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--maroon)' }} />
-            <input 
-              type="date" 
-              className="input-field" 
-              style={{ paddingLeft: '2.5rem' }} 
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <label className="role-label" style={{ marginBottom: '0.5rem', display: 'block' }}>END DATE</label>
-          <div style={{ position: 'relative' }}>
-            <CalendarDays size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--maroon)' }} />
-            <input 
-              type="date" 
-              className="input-field" 
-              style={{ paddingLeft: '2.5rem' }} 
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-        </div>
-        <button className="premium-btn" onClick={() => { setStartDate(''); setEndDate(''); }} style={{ height: '45px' }}>
-          CLEAR FILTER
-        </button>
-      </div>
-
-      <div className="table-container">
-        <table className="student-table">
-          <thead>
-            <tr>
-              <th>MEMBER NAME</th>
-              <th>DOMAIN</th>
-              <th>EVENTS COVERED</th>
-              <th>TASKS DONE</th>
-              <th>PENDING</th>
-              <th>EFFICIENCY</th>
-            </tr>
-          </thead>
-          <tbody>
-            {memberStats.map((stat, idx) => (
-              <tr key={idx}>
-                <td style={{ fontWeight: 800 }}>{stat.name}</td>
-                <td><span className="domain-tag">{stat.domain}</span></td>
-                <td style={{ fontWeight: 700 }}>{stat.totalEvents}</td>
-                <td style={{ color: 'green', fontWeight: 800 }}>{stat.completed}</td>
-                <td style={{ color: stat.pending > 0 ? 'var(--maroon)' : '#666', fontWeight: 800 }}>{stat.pending}</td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div className="progress-container" style={{ flex: 1, height: '6px' }}>
-                      <div style={{ width: `${stat.efficiency}%`, height: '100%', background: 'var(--maroon)' }}></div>
-                    </div>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{stat.efficiency}%</span>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-
-function WhitelistManagementView() {
-  const [emails, setEmails] = useState([])
-  const [newEmail, setNewEmail] = useState('')
-  const [isAdding, setIsAdding] = useState(false)
+  
+  // New assignee states
+  const [selectedName, setSelectedName] = useState('')
+  const [selectedType, setSelectedType] = useState('assigned')
 
   useEffect(() => {
-    const q = query(collection(db, 'whitelist'))
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setEmails(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })))
-    })
-    return () => unsubscribe()
-  }, [])
-
-  const handleAdd = async (e) => {
-    e.preventDefault()
-    if (!newEmail || isAdding) return
-    setIsAdding(true)
-    try {
-      // Check if already exists
-      const existing = emails.find(e => e.email.toLowerCase() === newEmail.toLowerCase())
-      if (existing) {
-        alert("Email already whitelisted.")
-        setIsAdding(false)
-        return
-      }
-
-      await addDoc(collection(db, 'whitelist'), {
-        email: newEmail.toLowerCase(),
-        addedAt: new Date().toISOString()
-      })
-      setNewEmail('')
-    } catch (error) {
-      console.error("Failed to add to whitelist:", error)
-      alert("Error adding email.")
-    } finally {
-      setIsAdding(false)
+    if (domainFilteredMembers.length > 0 && !selectedName) {
+      setSelectedName(domainFilteredMembers[0].name)
     }
-  }
+  }, [domainFilteredMembers, selectedName])
 
-  const handleRemove = async (id, email) => {
-    if (email === 'jcsayan7@gmail.com') {
-      alert("Cannot remove superadmin from whitelist.")
+  const handleAddAssignee = () => {
+    if (!selectedName) return
+    // Check if already assigned
+    if (localPersonnelList.find(p => p.name === selectedName)) {
+      alert("Member already assigned to this role!")
       return
     }
-    if (window.confirm(`Remove ${email} from whitelist?`)) {
-      try {
-        await deleteDoc(doc(db, 'whitelist', id))
-      } catch (error) {
-        console.error("Failed to remove from whitelist:", error)
-      }
-    }
+    setLocalPersonnelList([...localPersonnelList, { name: selectedName, type: selectedType }])
+  }
+
+  const handleRemoveAssignee = (name) => {
+    setLocalPersonnelList(localPersonnelList.filter(p => p.name !== name))
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">Access Control</h1>
-        <p className="page-subtitle">Manage whitelisted emails for system access.</p>
-      </div>
-
-      <div className="card" style={{ marginBottom: '2rem' }}>
-        <h2 className="card-title">GRANT ACCESS</h2>
-        <form onSubmit={handleAdd} style={{ display: 'flex', gap: '1rem' }}>
-          <input 
-            type="email" 
-            className="input-field" 
-            placeholder="Enter student email..." 
-            value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
-            required
-            style={{ flex: 1 }}
-          />
-          <button type="submit" className="premium-btn" disabled={isAdding}>
-            <Plus size={18} /> {isAdding ? 'ADDING...' : 'ADD TO WHITELIST'}
-          </button>
-        </form>
-      </div>
-
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>EMAIL ADDRESS</th>
-              <th>ADDED ON</th>
-              <th style={{ textAlign: 'right' }}>ACTION</th>
-            </tr>
-          </thead>
-          <tbody>
-            {emails.length > 0 ? emails.map(e => (
-              <tr key={e.id}>
-                <td style={{ fontWeight: 800 }}>{e.email}</td>
-                <td>{new Date(e.addedAt).toLocaleDateString()}</td>
-                <td style={{ textAlign: 'right' }}>
-                  <button 
-                    className="icon-btn delete" 
-                    onClick={() => handleRemove(e.id, e.email)}
-                    disabled={e.email === 'jcsayan7@gmail.com'}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            )) : (
-              <tr>
-                <td colSpan="3" style={{ textAlign: 'center', padding: '2rem' }}>No whitelisted emails.</td>
-              </tr>
+    <div className="modal-backdrop">
+      <div className="modal-box editing-cell-box">
+        <div className="modal-header">
+          <div>
+            <h3>Assign {targetDomainName}s</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+              Event: <strong>{currentEvent.name}</strong> ({eventId})
+            </p>
+          </div>
+          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="modal-body-content">
+          {/* Current Assignees */}
+          <div className="assignees-section">
+            <h4>Current Personnel</h4>
+            {localPersonnelList.length === 0 ? (
+              <p className="no-personnel-label">No personnel assigned to this domain.</p>
+            ) : (
+              <div className="assignee-edit-list">
+                {localPersonnelList.map((p, idx) => (
+                  <div key={idx} className="assignee-edit-row">
+                    <span className={`person-badge ${p.type}`}>{p.name}</span>
+                    <button className="remove-assignee-btn" onClick={() => handleRemoveAssignee(p.name)}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
-          </tbody>
-        </table>
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--cream-accent)', margin: '1.5rem 0' }} />
+
+          {/* Add New Assignee Form */}
+          <div className="add-assignee-form">
+            <h4>Add Personnel</h4>
+            {domainFilteredMembers.length === 0 ? (
+              <p className="no-personnel-label">No members registered in {targetDomainName} domain.</p>
+            ) : (
+              <div className="add-assignee-inputs">
+                <div className="form-group">
+                  <label>Select Member</label>
+                  <select 
+                    className="form-input" 
+                    value={selectedName} 
+                    onChange={(e) => setSelectedName(e.target.value)}
+                  >
+                    {domainFilteredMembers.map((m, idx) => (
+                      <option key={idx} value={m.name}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Role Type</label>
+                  <select 
+                    className="form-input" 
+                    value={selectedType} 
+                    onChange={(e) => setSelectedType(e.target.value)}
+                  >
+                    <option value="assigned">Assigned (Primary)</option>
+                    <option value="replacement">Replacement</option>
+                    <option value="assistant">Assistant</option>
+                  </select>
+                </div>
+                <button 
+                  type="button" 
+                  className="sheet-action-btn primary" 
+                  style={{ width: '100%', marginTop: '0.5rem' }} 
+                  onClick={handleAddAssignee}
+                >
+                  + Add to Event
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-actions" style={{ marginTop: '2rem' }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-primary" onClick={() => onSave(localPersonnelList)}>Save Assignments</button>
+        </div>
       </div>
     </div>
   )
