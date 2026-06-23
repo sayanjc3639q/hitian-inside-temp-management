@@ -445,12 +445,6 @@ function App() {
                 <span className="stat-title">Total Tasks Completed</span>
                 <span className="stat-value">{totalTasksCompleted}</span>
               </div>
-              <div className="stat-card">
-                <span className="stat-title">Top Contributor</span>
-                <span className="stat-value" style={{ fontSize: '1.2rem', marginTop: '0.5rem', fontWeight: '700' }}>
-                  {topPerformer}
-                </span>
-              </div>
             </div>
 
             {/* Domain Wise Bar Graph Card */}
@@ -655,16 +649,82 @@ function App() {
         return (
           <div className="page-layout">
             <header className="page-header">
-              <h1 className="page-title">Operational Account</h1>
-              <p className="page-subtitle">Manage login details, profile fields, and preferences.</p>
+              <h1 className="page-title">Operational Profile</h1>
+              <p className="page-subtitle">View account settings, active domain registration, and personal dashboard metrics.</p>
             </header>
-            <div className="coming-soon-card">
-              <div className="hammer-animation-wrapper">
-                <Hammer className="animated-hammer" size={56} />
-                <div className="impact-shockwave"></div>
+
+            <div className="account-container">
+              {/* Profile card (Left column) */}
+              <div className="profile-card">
+                <div className="profile-avatar">
+                  SU
+                </div>
+                <h2 className="profile-name">Sayan Usermember</h2>
+                <div className="profile-domain">Web Developer</div>
+                
+                <div className="profile-details">
+                  <div className="profile-detail-item">
+                    <span className="profile-detail-label">Status</span>
+                    <span className="profile-status-badge">Active</span>
+                  </div>
+                  <div className="profile-detail-item">
+                    <span className="profile-detail-label">Academic Year</span>
+                    <span className="profile-detail-value">3rd Year</span>
+                  </div>
+                  <div className="profile-detail-item">
+                    <span className="profile-detail-label">Email</span>
+                    <span className="profile-detail-value">sayan@hitianinside.org</span>
+                  </div>
+                  <div className="profile-detail-item">
+                    <span className="profile-detail-label">Registration Date</span>
+                    <span className="profile-detail-value">Sep 2024</span>
+                  </div>
+                </div>
               </div>
-              <h2 className="coming-soon-title">Under Construction</h2>
-              <p className="coming-soon-text">We are assembling parameters! Profiles and credentials will be active soon.</p>
+
+              {/* Personal Dashboard panel (Right column) */}
+              <div className="personal-dashboard-card">
+                <h3>My Dashboard</h3>
+                <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', marginBottom: '1.5rem' }}>
+                  <div className="stat-card" style={{ padding: '1.25rem' }}>
+                    <span className="stat-title" style={{ fontSize: '0.75rem' }}>My Tasks Completed</span>
+                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>14</span>
+                  </div>
+                  <div className="stat-card" style={{ padding: '1.25rem' }}>
+                    <span className="stat-title" style={{ fontSize: '0.75rem' }}>Contribution Rank</span>
+                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>#3</span>
+                  </div>
+                  <div className="stat-card" style={{ padding: '1.25rem' }}>
+                    <span className="stat-title" style={{ fontSize: '0.75rem' }}>Current Month Target</span>
+                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>70%</span>
+                  </div>
+                </div>
+
+                <h4 style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--maroon-primary)', marginBottom: '0.75rem' }}>Recent Assignments</h4>
+                <div className="personal-recent-tasks">
+                  <div className="personal-task-row">
+                    <div className="personal-task-info">
+                      <span className="personal-task-name">BIONEXUS DAY 1</span>
+                      <span className="personal-task-meta">Date: 2026-05-06</span>
+                    </div>
+                    <span className="personal-task-role">Web Developer</span>
+                  </div>
+                  <div className="personal-task-row">
+                    <div className="personal-task-info">
+                      <span className="personal-task-name">RTCI DAY 2</span>
+                      <span className="personal-task-meta">Date: 2026-05-08</span>
+                    </div>
+                    <span className="personal-task-role">Web Developer</span>
+                  </div>
+                  <div className="personal-task-row">
+                    <div className="personal-task-info">
+                      <span className="personal-task-name">Cricket Tournament Fixture</span>
+                      <span className="personal-task-meta">Date: 2026-05-04</span>
+                    </div>
+                    <span className="personal-task-role">Web Developer</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )
