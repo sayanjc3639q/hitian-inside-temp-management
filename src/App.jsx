@@ -180,10 +180,32 @@ function App() {
   })
 
   // Filter events by search query
-  const filteredEvents = sortedEvents.filter(ev => 
-    ev.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    ev.id.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredEvents = sortedEvents.filter(ev => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+
+    // Check basic attributes
+    if (ev.name.toLowerCase().includes(query)) return true;
+    if (ev.id.toLowerCase().includes(query)) return true;
+    if (ev.date && ev.date.toLowerCase().includes(query)) return true;
+    if (formatDateToDisplay(ev.date).toLowerCase().includes(query)) return true;
+
+    // Check completion status text matches
+    const statusText = ev.completed ? 'completed' : 'in progress';
+    if (statusText.includes(query)) return true;
+    if (query === 'complete' && ev.completed) return true;
+
+    // Check assignments
+    const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev'];
+    for (const d of domains) {
+      if (ev[d] && Array.isArray(ev[d])) {
+        const hasMatch = ev[d].some(p => p.name.toLowerCase().includes(query));
+        if (hasMatch) return true;
+      }
+    }
+
+    return false;
+  })
 
   // Calculate tasks completed dynamically for a member
   const getTasksCountForMember = (memberName) => {

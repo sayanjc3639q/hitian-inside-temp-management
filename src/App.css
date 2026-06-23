@@ -1835,3 +1835,44 @@
   }
 }
 
+/* Desktop Green and Circular Checkbox for Event Status Toggle */
+.status-toggle-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--text-muted);
+  border-radius: 50%;
+  outline: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease-in-out;
+  background-color: transparent;
+}
+
+.status-toggle-checkbox:checked {
+  background-color: #2e7d32; /* Dark green background */
+  border-color: #2e7d32;
+}
+
+.status-toggle-checkbox:checked::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  position: absolute;
+  top: 1px;
+  left: 5px;
+}
+
+.status-toggle-checkbox:hover {
+  border-color: var(--maroon-primary);
+  box-shadow: 0 0 4px rgba(128, 0, 0, 0.2);
+}
+
+
