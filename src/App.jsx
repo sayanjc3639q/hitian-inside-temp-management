@@ -67,6 +67,7 @@ function App() {
   const [newOnboardingMemberName, setNewOnboardingMemberName] = useState('')
   const [newOnboardingMemberDomain, setNewOnboardingMemberDomain] = useState('Photographer')
   const [showAddInOnboarding, setShowAddInOnboarding] = useState(false)
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false)
 
   useEffect(() => {
     if (toastMessage) {
@@ -1107,6 +1108,15 @@ function App() {
             </svg>
             Sign in with Google
           </button>
+          
+          <div style={{ marginTop: '2rem', fontSize: '0.85rem', opacity: '0.7' }}>
+            <span 
+              style={{ textDecoration: 'underline', cursor: 'pointer', color: 'rgba(255,255,255,0.8)' }}
+              onClick={() => setShowPrivacyModal(true)}
+            >
+              Privacy Policy
+            </span>
+          </div>
         </div>
       </div>
     )
@@ -1335,6 +1345,9 @@ function App() {
         </ul>
 
         <div className="sidebar-footer">
+          <div className="footer-system-label" style={{ cursor: 'pointer', textDecoration: 'underline', marginBottom: '0.5rem' }} onClick={() => setShowPrivacyModal(true)}>
+            PRIVACY POLICY
+          </div>
           <div className="footer-system-label">OPERATIONS CONTROL</div>
           <div className="footer-system-val">V2.0.0 ACTIVE</div>
         </div>
@@ -1502,6 +1515,33 @@ function App() {
       {toastMessage && (
         <div className="toast-notification">
           {toastMessage}
+        </div>
+      )}
+      {showPrivacyModal && (
+        <div className="modal-backdrop" style={{ zIndex: 1200 }}>
+          <div className="modal-box" style={{ maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto' }}>
+            <div className="modal-header">
+              <h3>Privacy Policy</h3>
+              <button className="modal-close" onClick={() => setShowPrivacyModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body-content" style={{ fontSize: '0.9rem', lineHeight: '1.6', color: 'var(--text-dark)', textAlign: 'left', padding: '1rem 0' }}>
+              <p>Last updated: June 23, 2026</p>
+              <p style={{ marginTop: '0.75rem' }}>This Privacy Policy describes how <strong>Hitian Inside Management</strong> collects, uses, and shares your information when you use our web application to log in via Google OAuth.</p>
+              
+              <h4 style={{ marginTop: '1.25rem', fontWeight: '800', color: 'var(--maroon-primary)' }}>1. Information We Collect</h4>
+              <p>When you log in using your Google Account, we retrieve your email address, full name, profile picture, and Google User ID.</p>
+              
+              <h4 style={{ marginTop: '1.25rem', fontWeight: '800', color: 'var(--maroon-primary)' }}>2. How We Use Your Information</h4>
+              <p>We use this information to authenticate your session, match your credentials to your database profile roster card, and track task contributions securely.</p>
+              <p>We do not use your information for marketing and we never share it with third parties.</p>
+              
+              <h4 style={{ marginTop: '1.25rem', fontWeight: '800', color: 'var(--maroon-primary)' }}>3. Data Retention & Deletion</h4>
+              <p>Data is stored securely for account operations. You can request record unlinking or account deletion at any time by contacting the administrator.</p>
+            </div>
+            <div className="modal-actions" style={{ marginTop: '1.5rem' }}>
+              <button type="button" className="btn-primary" onClick={() => setShowPrivacyModal(false)}>Close</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
