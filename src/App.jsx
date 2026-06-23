@@ -709,7 +709,26 @@ function App() {
         // Split into the 3 groupings
         const activeMembers = filteredMembers.filter(m => m.year === '1st Year' || m.year === '2nd Year');
         const seniors = filteredMembers.filter(m => m.year === '3rd Year');
-        const heads = filteredMembers.filter(m => m.year === '4th Year');
+        
+        const headsOrder = [
+          'Team-in-charge',
+          'Tresurer',
+          'Photography Head',
+          'Media Head',
+          'Graphics Head',
+          'Editor-in-chief',
+          'video editing head',
+          'Event Head'
+        ];
+        const heads = filteredMembers
+          .filter(m => m.year === '4th Year')
+          .sort((a, b) => {
+            const idxA = headsOrder.indexOf(a.domain);
+            const idxB = headsOrder.indexOf(b.domain);
+            const rankA = idxA === -1 ? 999 : idxA;
+            const rankB = idxB === -1 ? 999 : idxB;
+            return rankA - rankB;
+          });
 
         const renderActiveMembersTable = () => (
           <div className="table-card" style={{ marginBottom: '2.5rem' }}>
@@ -835,7 +854,7 @@ function App() {
                         <td style={{ fontWeight: '700' }}>{member.name}</td>
                         <td>
                           <span className="person-badge assigned" style={{ background: 'linear-gradient(135deg, var(--maroon-primary), var(--maroon-accent))', color: 'var(--text-light)', fontWeight: '700' }}>
-                            {member.domain} Head
+                            {member.domain}
                           </span>
                         </td>
                         <td>
@@ -932,7 +951,7 @@ function App() {
                       <div className="assignment-row">
                         <span className="assignment-label">Domain</span>
                         <span className="person-badge assigned" style={{ alignSelf: 'flex-start' }}>
-                          {member.domain} {member.year === '4th Year' ? 'Head' : ''}
+                          {member.domain}
                         </span>
                       </div>
                     </div>
@@ -1118,7 +1137,14 @@ function App() {
                   <div 
                     key={yr}
                     className={`onboarding-year-card ${selectedOnboardingYear === yr ? 'selected' : ''}`}
-                    onClick={() => setSelectedOnboardingYear(yr)}
+                    onClick={() => {
+                      setSelectedOnboardingYear(yr)
+                      if (yr === '4th Year') {
+                        setNewOnboardingMemberDomain('Team-in-charge')
+                      } else {
+                        setNewOnboardingMemberDomain('Photographer')
+                      }
+                    }}
                   >
                     {yr}
                   </div>
@@ -1204,12 +1230,27 @@ function App() {
                       value={newOnboardingMemberDomain}
                       onChange={(e) => setNewOnboardingMemberDomain(e.target.value)}
                     >
-                      <option value="Photographer">Photographer</option>
-                      <option value="Graphic Designer">Graphic Designer</option>
-                      <option value="Content Writter">Content Writter</option>
-                      <option value="Video Editor">Video Editor</option>
-                      <option value="Public Relation">Public Relation</option>
-                      <option value="Web Developer">Web Developer</option>
+                      {selectedOnboardingYear === '4th Year' ? (
+                        <>
+                          <option value="Team-in-charge">Team-in-charge</option>
+                          <option value="Tresurer">Tresurer</option>
+                          <option value="Photography Head">Photography Head</option>
+                          <option value="Media Head">Media Head</option>
+                          <option value="Graphics Head">Graphics Head</option>
+                          <option value="Editor-in-chief">Editor-in-chief</option>
+                          <option value="video editing head">video editing head</option>
+                          <option value="Event Head">Event Head</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Photographer">Photographer</option>
+                          <option value="Graphic Designer">Graphic Designer</option>
+                          <option value="Content Writter">Content Writter</option>
+                          <option value="Video Editor">Video Editor</option>
+                          <option value="Public Relation">Public Relation</option>
+                          <option value="Web Developer">Web Developer</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
@@ -1638,7 +1679,19 @@ function AddMemberModal({ onClose, onAdd }) {
           </div>
           <div className="form-group">
             <label>Academic Year</label>
-            <select className="form-input" value={year} onChange={(e) => setYear(e.target.value)}>
+            <select 
+              className="form-input" 
+              value={year} 
+              onChange={(e) => {
+                const newYear = e.target.value
+                setYear(newYear)
+                if (newYear === '4th Year') {
+                  setDomain('Team-in-charge')
+                } else {
+                  setDomain('Photographer')
+                }
+              }}
+            >
               <option>1st Year</option>
               <option>2nd Year</option>
               <option>3rd Year</option>
@@ -1648,12 +1701,27 @@ function AddMemberModal({ onClose, onAdd }) {
           <div className="form-group">
             <label>Domain</label>
             <select className="form-input" value={domain} onChange={(e) => setDomain(e.target.value)}>
-              <option>Photographer</option>
-              <option>Graphic Designer</option>
-              <option>Content Writter</option>
-              <option>Video Editor</option>
-              <option>Public Relation</option>
-              <option>Web Developer</option>
+              {year === '4th Year' ? (
+                <>
+                  <option value="Team-in-charge">Team-in-charge</option>
+                  <option value="Tresurer">Tresurer</option>
+                  <option value="Photography Head">Photography Head</option>
+                  <option value="Media Head">Media Head</option>
+                  <option value="Graphics Head">Graphics Head</option>
+                  <option value="Editor-in-chief">Editor-in-chief</option>
+                  <option value="video editing head">video editing head</option>
+                  <option value="Event Head">Event Head</option>
+                </>
+              ) : (
+                <>
+                  <option value="Photographer">Photographer</option>
+                  <option value="Graphic Designer">Graphic Designer</option>
+                  <option value="Content Writter">Content Writter</option>
+                  <option value="Video Editor">Video Editor</option>
+                  <option value="Public Relation">Public Relation</option>
+                  <option value="Web Developer">Web Developer</option>
+                </>
+              )}
             </select>
           </div>
           <div className="form-group">
