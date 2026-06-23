@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.members (
     year TEXT NOT NULL,
     domain TEXT NOT NULL,
     completed INTEGER DEFAULT 0 NOT NULL,
+    user_id UUID UNIQUE DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

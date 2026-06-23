@@ -57,6 +57,17 @@ function App() {
   const [memberYearFilter, setMemberYearFilter] = useState('All')
   const [dashboardDomain, setDashboardDomain] = useState('Photographer')
 
+  // Auth States
+  const [session, setSession] = useState(null)
+  const [currentUserProfile, setCurrentUserProfile] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [onboardingStep, setOnboardingStep] = useState(0) // 0: none, 1: year select, 2: claim name
+  const [selectedOnboardingYear, setSelectedOnboardingYear] = useState('1st Year')
+  const [selectedClaimName, setSelectedClaimName] = useState('')
+  const [newOnboardingMemberName, setNewOnboardingMemberName] = useState('')
+  const [newOnboardingMemberDomain, setNewOnboardingMemberDomain] = useState('Photographer')
+  const [showAddInOnboarding, setShowAddInOnboarding] = useState(false)
+
   useEffect(() => {
     if (toastMessage) {
       const timer = setTimeout(() => {
@@ -71,6 +82,132 @@ function App() {
   // 1. Core States for dynamic updates
   const [events, setEvents] = useState([])
   const [members, setMembers] = useState([])
+
+  // Dev bypass handlers
+  const handleDevBypassAsNew = () => {
+    const mockUser = {
+      id: 'mock-' + Math.random().toString(36).substring(2, 11),
+      email: 'new-dev-user@example.com'
+    }
+    const mockSession = { user: mockUser }
+    setSession(mockSession)
+    setCurrentUserProfile(null)
+    setOnboardingStep(1)
+    setAuthLoading(false)
+  }
+
+  const handleDevBypassAsExisting = (memberName) => {
+    const matchedMember = members.find(m => m.name === memberName)
+    if (!matchedMember) return
+    const mockUser = {
+      id: matchedMember.user_id || 'mock-' + Math.random().toString(36).substring(2, 11),
+      email: `${matchedMember.name.toLowerCase().replace(/\s+/g, '')}@example.com`
+    }
+    const mockSession = { user: mockUser }
+    
+    setSession(mockSession)
+    setCurrentUserProfile({
+      ...matchedMember,
+      user_id: mockUser.id
+    })
+    setOnboardingStep(0)
+    setAuthLoading(false)
+  }
+
+  // Google OAuth Logins
+  const handleGoogleLogin = async () => {
+    try {
+      setAuthLoading(true)
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      })
+      if (error) throw error
+    } catch (err) {
+      alert('Google Login failed: ' + err.message)
+      setAuthLoading(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      setAuthLoading(true)
+      if (session && session.user.id.startsWith('mock-')) {
+        setSession(null)
+        setCurrentUserProfile(null)
+        setOnboardingStep(0)
+        setAuthLoading(false)
+      } else {
+        const { error } = await supabase.auth.signOut()
+        if (error) throw error
+      }
+    } catch (err) {
+      alert('Sign out error: ' + err.message)
+      setAuthLoading(false)
+    }
+  }
+
+  const handleClaimProfile = async (memberName) => {
+    try {
+      setAuthLoading(true)
+      if (!session) return
+
+      const { data, error } = await supabase
+        .from('members')
+        .update({ user_id: session.user.id })
+        .eq('name', memberName)
+        .select()
+        .single()
+      
+      if (error) throw error
+
+      setCurrentUserProfile(data)
+      setOnboardingStep(0)
+      setToastMessage(`Profile claimed successfully as ${data.name}!`)
+      fetchMembers()
+    } catch (err) {
+      alert('Error claiming profile: ' + err.message)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleCreateAndClaimProfile = async () => {
+    try {
+      if (!newOnboardingMemberName.trim()) {
+        alert('Please enter your name.')
+        return
+      }
+      setAuthLoading(true)
+      
+      const newMember = {
+        name: newOnboardingMemberName.trim(),
+        year: selectedOnboardingYear,
+        domain: newOnboardingMemberDomain,
+        completed: 0,
+        user_id: session.user.id
+      }
+
+      const { data, error } = await supabase
+        .from('members')
+        .insert([newMember])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setCurrentUserProfile(data)
+      setOnboardingStep(0)
+      setToastMessage(`Profile created and claimed successfully as ${data.name}!`)
+      fetchMembers()
+    } catch (err) {
+      alert('Error creating profile: ' + err.message)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
 
   // Sort events by date descending
   const sortedEvents = [...events].sort((a, b) => {
@@ -102,6 +239,44 @@ function App() {
     return count
   }
 
+  // Personal Dashboard calculations
+  const getContributionRank = (memberName) => {
+    const activeM = members.filter(m => m.year === '1st Year' || m.year === '2nd Year')
+    const sorted = activeM.map(m => ({
+      name: m.name,
+      tasks: (m.completed || 0) + getTasksCountForMember(m.name)
+    })).sort((a, b) => b.tasks - a.tasks)
+
+    const rankIdx = sorted.findIndex(m => m.name === memberName)
+    return rankIdx !== -1 ? `#${rankIdx + 1}` : 'N/A'
+  }
+
+  const getUserRecentAssignments = (memberName) => {
+    const userEvents = []
+    events.forEach(ev => {
+      const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev']
+      domains.forEach(d => {
+        if (ev[d] && Array.isArray(ev[d])) {
+          const matched = ev[d].find(p => p.name === memberName)
+          if (matched) {
+            userEvents.push({
+              id: ev.id,
+              name: ev.name,
+              date: ev.date,
+              role: getDomainFromKey(d),
+              type: matched.type
+            })
+          }
+        }
+      })
+    })
+    return userEvents.sort((a, b) => {
+      const dateA = a.date ? new Date(a.date) : new Date(0)
+      const dateB = b.date ? new Date(b.date) : new Date(0)
+      return dateB - dateA
+    }).slice(0, 5)
+  }
+
   // Fetch from Supabase
   const fetchEvents = async () => {
     try {
@@ -129,10 +304,71 @@ function App() {
     }
   }
 
+  const checkUserClaims = async (user) => {
+    try {
+      setAuthLoading(true)
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      
+      if (error) throw error
+
+      if (data) {
+        setCurrentUserProfile(data)
+        setOnboardingStep(0)
+      } else {
+        setCurrentUserProfile(null)
+        setOnboardingStep(1)
+      }
+    } catch (err) {
+      console.error('Error checking user claims:', err.message)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchEvents()
     fetchMembers()
   }, [])
+
+  useEffect(() => {
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session && !session.user.id.startsWith('mock-')) {
+        checkUserClaims(session.user)
+      } else if (!session) {
+        setAuthLoading(false)
+      }
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setSession(session)
+        if (!session.user.id.startsWith('mock-')) {
+          checkUserClaims(session.user)
+        }
+      } else {
+        setSession(prev => {
+          if (prev && prev.user.id.startsWith('mock-')) {
+            return prev
+          }
+          setCurrentUserProfile(null)
+          setOnboardingStep(0)
+          setAuthLoading(false)
+          return null
+        })
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [members.length])
 
   // Cell Editor States
   const [editingCellInfo, setEditingCellInfo] = useState(null) // { eventId, domainKey }
@@ -515,12 +751,158 @@ function App() {
           return matchesSearch && matchesDomain && matchesYear;
         })
 
+        // Split into the 3 groupings
+        const activeMembers = filteredMembers.filter(m => m.year === '1st Year' || m.year === '2nd Year');
+        const seniors = filteredMembers.filter(m => m.year === '3rd Year');
+        const heads = filteredMembers.filter(m => m.year === '4th Year');
+
+        const renderActiveMembersTable = () => (
+          <div className="table-card" style={{ marginBottom: '2.5rem' }}>
+            <h3 style={{ padding: '1.25rem 1.5rem 0.5rem', fontSize: '1.1rem', fontWeight: '800', color: 'var(--maroon-primary)', borderBottom: '1px dashed var(--cream-accent)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Active Members (1st & 2nd Year)</span>
+              <span style={{ fontSize: '0.8rem', background: 'var(--maroon-primary)', color: '#fff', padding: '0.1rem 0.5rem', borderRadius: '4px' }}>{activeMembers.length} Registered</span>
+            </h3>
+            <div className="table-scroll-container">
+              <table className="sheet-table">
+                <thead>
+                  <tr>
+                    <th>MEMBER NAME</th>
+                    <th>YEAR</th>
+                    <th>DOMAIN</th>
+                    <th>TASKS COMPLETED</th>
+                    <th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No operational members to show
+                      </td>
+                    </tr>
+                  ) : (
+                    activeMembers.map((member, idx) => (
+                      <tr key={member.id || idx}>
+                        <td style={{ fontWeight: '700' }}>{member.name}</td>
+                        <td>{member.year}</td>
+                        <td>
+                          <span className="person-badge assigned">
+                            {member.domain}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: '800', color: 'var(--maroon-accent)', paddingLeft: '2.5rem' }}>
+                          {(member.completed || 0) + getTasksCountForMember(member.name)}
+                        </td>
+                        <td>
+                          <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+        const renderSeniorsTable = () => (
+          <div className="table-card" style={{ marginBottom: '2.5rem' }}>
+            <h3 style={{ padding: '1.25rem 1.5rem 0.5rem', fontSize: '1.1rem', fontWeight: '800', color: 'var(--maroon-primary)', borderBottom: '1px dashed var(--cream-accent)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Domain Seniors (3rd Year)</span>
+              <span style={{ fontSize: '0.8rem', background: 'var(--maroon-accent)', color: '#fff', padding: '0.1rem 0.5rem', borderRadius: '4px' }}>{seniors.length} Registered</span>
+            </h3>
+            <div className="table-scroll-container">
+              <table className="sheet-table">
+                <thead>
+                  <tr>
+                    <th>MEMBER NAME</th>
+                    <th>DOMAIN</th>
+                    <th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {seniors.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No domain seniors to show
+                      </td>
+                    </tr>
+                  ) : (
+                    seniors.map((member, idx) => (
+                      <tr key={member.id || idx}>
+                        <td style={{ fontWeight: '700' }}>{member.name}</td>
+                        <td>
+                          <span className="person-badge assigned" style={{ backgroundColor: 'var(--cream-accent)', color: 'var(--text-dark)', fontWeight: '600' }}>
+                            {member.domain}
+                          </span>
+                        </td>
+                        <td>
+                          <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+        const renderHeadsTable = () => (
+          <div className="table-card" style={{ marginBottom: '2.5rem' }}>
+            <h3 style={{ padding: '1.25rem 1.5rem 0.5rem', fontSize: '1.1rem', fontWeight: '800', color: 'var(--maroon-primary)', borderBottom: '1px dashed var(--cream-accent)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Domain Heads (4th Year)</span>
+              <span style={{ fontSize: '0.8rem', background: 'gold', color: 'var(--maroon-dark)', padding: '0.1rem 0.5rem', borderRadius: '4px', fontWeight: '700' }}>{heads.length} Registered</span>
+            </h3>
+            <div className="table-scroll-container">
+              <table className="sheet-table">
+                <thead>
+                  <tr>
+                    <th>NAME</th>
+                    <th>DOMAIN</th>
+                    <th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {heads.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No domain heads to show
+                      </td>
+                    </tr>
+                  ) : (
+                    heads.map((member, idx) => (
+                      <tr key={member.id || idx}>
+                        <td style={{ fontWeight: '700' }}>{member.name}</td>
+                        <td>
+                          <span className="person-badge assigned" style={{ background: 'linear-gradient(135deg, var(--maroon-primary), var(--maroon-accent))', color: 'var(--text-light)', fontWeight: '700' }}>
+                            {member.domain} Head
+                          </span>
+                        </td>
+                        <td>
+                          <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
         return (
           <div className="page-layout">
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h1 className="page-title">Member Directory</h1>
-                <p className="page-subtitle">Database of all active and registered club members.</p>
+                <p className="page-subtitle">Database of all active, senior, and heading operational club members.</p>
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <input 
@@ -563,50 +945,9 @@ function App() {
 
             {/* Desktop Table View */}
             <div className="desktop-table-view">
-              <div className="table-card">
-                <div className="table-scroll-container">
-                  <table className="sheet-table">
-                    <thead>
-                      <tr>
-                        <th>MEMBER NAME</th>
-                        <th>YEAR</th>
-                        <th>DOMAIN</th>
-                        <th>TASKS COMPLETED</th>
-                        <th>ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredMembers.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
-                            No data to show
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredMembers.map((member, idx) => (
-                          <tr key={member.id || idx}>
-                            <td style={{ fontWeight: '700' }}>{member.name}</td>
-                            <td>{member.year}</td>
-                            <td>
-                              <span className="person-badge assigned">
-                                {member.domain}
-                              </span>
-                            </td>
-                            <td style={{ fontWeight: '800', color: 'var(--maroon-accent)', paddingLeft: '2.5rem' }}>
-                              {(member.completed || 0) + getTasksCountForMember(member.name)}
-                            </td>
-                            <td>
-                              <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
-                                <Trash2 size={16} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {(memberYearFilter === 'All' || memberYearFilter === '1st Year' || memberYearFilter === '2nd Year') && renderActiveMembersTable()}
+              {(memberYearFilter === 'All' || memberYearFilter === '3rd Year') && renderSeniorsTable()}
+              {(memberYearFilter === 'All' || memberYearFilter === '4th Year') && renderHeadsTable()}
             </div>
 
             {/* Mobile Card View */}
@@ -621,9 +962,11 @@ function App() {
                     <div className="mobile-event-card-header">
                       <span className="mobile-event-id">{member.year}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        <span className="mobile-event-date" style={{ fontWeight: '800', color: 'var(--maroon-accent)' }}>
-                          {(member.completed || 0) + getTasksCountForMember(member.name)} Tasks Done
-                        </span>
+                        {(member.year === '1st Year' || member.year === '2nd Year') && (
+                          <span className="mobile-event-date" style={{ fontWeight: '800', color: 'var(--maroon-accent)' }}>
+                            {(member.completed || 0) + getTasksCountForMember(member.name)} Tasks Done
+                          </span>
+                        )}
                         <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
                           <Trash2 size={14} />
                         </button>
@@ -634,7 +977,7 @@ function App() {
                       <div className="assignment-row">
                         <span className="assignment-label">Domain</span>
                         <span className="person-badge assigned" style={{ alignSelf: 'flex-start' }}>
-                          {member.domain}
+                          {member.domain} {member.year === '4th Year' ? 'Head' : ''}
                         </span>
                       </div>
                     </div>
@@ -645,7 +988,29 @@ function App() {
           </div>
         )
       }
-      case 'ACCOUNT':
+      case 'ACCOUNT': {
+        if (!currentUserProfile) {
+          return (
+            <div className="page-layout">
+              <header className="page-header">
+                <h1 className="page-title">Profile Settings</h1>
+                <p className="page-subtitle">Manage your credentials and view your contribution status.</p>
+              </header>
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                No active profile linked. Please claim your profile first.
+              </div>
+            </div>
+          )
+        }
+
+        const initials = currentUserProfile.name
+          ? currentUserProfile.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+          : '??'
+
+        const totalTasks = (currentUserProfile.completed || 0) + getTasksCountForMember(currentUserProfile.name)
+        const userRank = getContributionRank(currentUserProfile.name)
+        const recentTasks = getUserRecentAssignments(currentUserProfile.name)
+
         return (
           <div className="page-layout">
             <header className="page-header">
@@ -657,10 +1022,10 @@ function App() {
               {/* Profile card (Left column) */}
               <div className="profile-card">
                 <div className="profile-avatar">
-                  SU
+                  {initials}
                 </div>
-                <h2 className="profile-name">Sayan Usermember</h2>
-                <div className="profile-domain">Web Developer</div>
+                <h2 className="profile-name">{currentUserProfile.name}</h2>
+                <div className="profile-domain">{currentUserProfile.domain}</div>
                 
                 <div className="profile-details">
                   <div className="profile-detail-item">
@@ -669,17 +1034,23 @@ function App() {
                   </div>
                   <div className="profile-detail-item">
                     <span className="profile-detail-label">Academic Year</span>
-                    <span className="profile-detail-value">3rd Year</span>
+                    <span className="profile-detail-value">{currentUserProfile.year}</span>
                   </div>
                   <div className="profile-detail-item">
-                    <span className="profile-detail-label">Email</span>
-                    <span className="profile-detail-value">sayan@hitianinside.org</span>
+                    <span className="profile-detail-label">Auth Email</span>
+                    <span className="profile-detail-value" style={{ wordBreak: 'break-all' }}>{session?.user?.email || 'N/A'}</span>
                   </div>
                   <div className="profile-detail-item">
                     <span className="profile-detail-label">Registration Date</span>
-                    <span className="profile-detail-value">Sep 2024</span>
+                    <span className="profile-detail-value">
+                      {currentUserProfile.created_at ? new Date(currentUserProfile.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : 'N/A'}
+                    </span>
                   </div>
                 </div>
+
+                <button className="profile-sign-out-btn" onClick={handleSignOut}>
+                  Sign Out
+                </button>
               </div>
 
               {/* Personal Dashboard panel (Right column) */}
@@ -688,11 +1059,15 @@ function App() {
                 <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', marginBottom: '1.5rem' }}>
                   <div className="stat-card" style={{ padding: '1.25rem' }}>
                     <span className="stat-title" style={{ fontSize: '0.75rem' }}>My Tasks Completed</span>
-                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>14</span>
+                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>
+                      {currentUserProfile.year === '3rd Year' || currentUserProfile.year === '4th Year' ? 'N/A' : totalTasks}
+                    </span>
                   </div>
                   <div className="stat-card" style={{ padding: '1.25rem' }}>
                     <span className="stat-title" style={{ fontSize: '0.75rem' }}>Contribution Rank</span>
-                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>#3</span>
+                    <span className="stat-value" style={{ fontSize: '1.75rem' }}>
+                      {currentUserProfile.year === '3rd Year' || currentUserProfile.year === '4th Year' ? 'N/A' : userRank}
+                    </span>
                   </div>
                   <div className="stat-card" style={{ padding: '1.25rem' }}>
                     <span className="stat-title" style={{ fontSize: '0.75rem' }}>Current Month Target</span>
@@ -702,35 +1077,233 @@ function App() {
 
                 <h4 style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--maroon-primary)', marginBottom: '0.75rem' }}>Recent Assignments</h4>
                 <div className="personal-recent-tasks">
-                  <div className="personal-task-row">
-                    <div className="personal-task-info">
-                      <span className="personal-task-name">BIONEXUS DAY 1</span>
-                      <span className="personal-task-meta">Date: 2026-05-06</span>
+                  {recentTasks.length === 0 ? (
+                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', background: 'var(--cream-bg)', borderRadius: '8px', border: '1px solid var(--cream-accent)' }}>
+                      No recent assignments found.
                     </div>
-                    <span className="personal-task-role">Web Developer</span>
-                  </div>
-                  <div className="personal-task-row">
-                    <div className="personal-task-info">
-                      <span className="personal-task-name">RTCI DAY 2</span>
-                      <span className="personal-task-meta">Date: 2026-05-08</span>
-                    </div>
-                    <span className="personal-task-role">Web Developer</span>
-                  </div>
-                  <div className="personal-task-row">
-                    <div className="personal-task-info">
-                      <span className="personal-task-name">Cricket Tournament Fixture</span>
-                      <span className="personal-task-meta">Date: 2026-05-04</span>
-                    </div>
-                    <span className="personal-task-role">Web Developer</span>
-                  </div>
+                  ) : (
+                    recentTasks.map((t, idx) => (
+                      <div className="personal-task-row" key={idx}>
+                        <div className="personal-task-info">
+                          <span className="personal-task-name">{t.name}</span>
+                          <span className="personal-task-meta">Date: {t.date || 'N/A'}</span>
+                        </div>
+                        <span className="personal-task-role">{t.role} ({t.type})</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )
+      }
       default:
         return null
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="auth-loader-container">
+        <div className="auth-spinner"></div>
+        <p style={{ color: 'var(--text-dark)', fontWeight: '600' }}>Loading user session...</p>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="auth-page-container">
+        <div className="auth-glass-card">
+          <div className="auth-logo">
+            <User size={36} />
+          </div>
+          <h1 className="auth-title">Hitian Inside</h1>
+          <p className="auth-subtitle">
+            Operations Management Platform.<br />
+            Sign in with Google OAuth to access your team workspace.
+          </p>
+
+          <button className="google-login-btn" onClick={handleGoogleLogin}>
+            <svg className="google-icon" viewBox="0 0 24 24">
+              <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.48 14.99 1 12 1 7.28 1 3.25 3.75 1.25 7.77l3.92 3.04c.93-2.8 3.54-4.77 6.83-4.77z"/>
+              <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.4 3.58v2.98h3.86c2.26-2.09 3.57-5.17 3.57-8.71z"/>
+              <path fill="#FBBC05" d="M5.17 14.77c-.24-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27L1.25 7.19C.45 8.79 0 10.59 0 12.5s.45 3.71 1.25 5.31l3.92-3.04z"/>
+              <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.86-2.98c-1.08.72-2.45 1.15-4.1 1.15-3.29 0-5.9-1.97-6.83-4.77l-3.92 3.04C3.25 20.25 7.28 23 12 23z"/>
+            </svg>
+            Sign in with Google
+          </button>
+
+          {/* Dev / Guest Bypass Area */}
+          <div className="dev-bypass-section">
+            <div className="dev-bypass-title">Developer / Offline Bypass</div>
+            
+            <button className="dev-bypass-btn" style={{ marginBottom: '0.75rem' }} onClick={handleDevBypassAsNew}>
+              🔑 Simulate Login as New User (Test Onboarding)
+            </button>
+
+            {members.length > 0 && (
+              <>
+                <div style={{ fontSize: '0.75rem', opacity: '0.6', marginBottom: '0.25rem' }}>Or choose an existing member:</div>
+                <select 
+                  className="dev-bypass-select"
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleDevBypassAsExisting(e.target.value)
+                    }
+                  }}
+                >
+                  <option value="" disabled>-- Select Member --</option>
+                  {members.map((m, idx) => (
+                    <option key={idx} value={m.name}>{m.name} ({m.year} - {m.domain})</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (onboardingStep > 0) {
+    const unclaimedMembers = members.filter(m => m.year === selectedOnboardingYear && !m.user_id)
+
+    return (
+      <div className="auth-page-container">
+        <div className="auth-glass-card">
+          <div className="auth-logo">
+            <UserPlus size={36} />
+          </div>
+          <h1 className="auth-title">Setup Profile</h1>
+          
+          <div className="onboarding-steps">
+            <div className={`onboarding-step-dot ${onboardingStep === 1 ? 'active' : ''}`}></div>
+            <div className={`onboarding-step-dot ${onboardingStep === 2 ? 'active' : ''}`}></div>
+          </div>
+
+          {onboardingStep === 1 && (
+            <div>
+              <p className="auth-subtitle">Select your academic year to match your profile.</p>
+              
+              <div className="onboarding-year-grid">
+                {['1st Year', '2nd Year', '3rd Year', '4th Year'].map((yr) => (
+                  <div 
+                    key={yr}
+                    className={`onboarding-year-card ${selectedOnboardingYear === yr ? 'selected' : ''}`}
+                    onClick={() => setSelectedOnboardingYear(yr)}
+                  >
+                    {yr}
+                  </div>
+                ))}
+              </div>
+
+              <div className="onboarding-action-row">
+                <button className="onboarding-btn secondary" onClick={() => setSession(null)}>Cancel</button>
+                <button className="onboarding-btn primary" onClick={() => setOnboardingStep(2)}>Next</button>
+              </div>
+            </div>
+          )}
+
+          {onboardingStep === 2 && (
+            <div>
+              <p className="auth-subtitle">
+                Select your name from the unclaimed <strong>{selectedOnboardingYear}</strong> list.
+              </p>
+
+              {!showAddInOnboarding ? (
+                <>
+                  <div className="onboarding-claim-list">
+                    {unclaimedMembers.length === 0 ? (
+                      <div style={{ padding: '2rem', fontStyle: 'italic', opacity: '0.6' }}>
+                        No unclaimed members found for {selectedOnboardingYear}.
+                      </div>
+                    ) : (
+                      unclaimedMembers.map((m, idx) => (
+                        <div 
+                          key={idx}
+                          className={`onboarding-claim-item ${selectedClaimName === m.name ? 'selected' : ''}`}
+                          onClick={() => setSelectedClaimName(m.name)}
+                        >
+                          <span className="onboarding-claim-name">{m.name}</span>
+                          <span className="onboarding-claim-domain">{m.domain}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: '1.5rem', fontSize: '0.85rem' }}>
+                    Don't see your name?{' '}
+                    <span 
+                      style={{ color: 'var(--gold)', cursor: 'pointer', fontWeight: '700', textDecoration: 'underline' }}
+                      onClick={() => setShowAddInOnboarding(true)}
+                    >
+                      Create a new profile
+                    </span>
+                  </div>
+
+                  <div className="onboarding-action-row">
+                    <button className="onboarding-btn secondary" onClick={() => setOnboardingStep(1)}>Back</button>
+                    <button 
+                      className="onboarding-btn primary" 
+                      disabled={!selectedClaimName}
+                      onClick={() => handleClaimProfile(selectedClaimName)}
+                    >
+                      Claim Profile
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'left', background: 'rgba(0,0,0,0.15)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
+                  <h4 style={{ color: 'var(--gold)', marginBottom: '1rem', fontSize: '0.95rem' }}>Register New Profile</h4>
+                  
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label style={{ fontSize: '0.8rem', opacity: '0.8', display: 'block', marginBottom: '0.25rem' }}>Your Full Name</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="e.g. Priyanshu Raj" 
+                      style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px' }}
+                      value={newOnboardingMemberName}
+                      onChange={(e) => setNewOnboardingMemberName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ fontSize: '0.8rem', opacity: '0.8', display: 'block', marginBottom: '0.25rem' }}>Domain</label>
+                    <select 
+                      className="form-input" 
+                      style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', cursor: 'pointer' }}
+                      value={newOnboardingMemberDomain}
+                      onChange={(e) => setNewOnboardingMemberDomain(e.target.value)}
+                    >
+                      <option value="Photographer">Photographer</option>
+                      <option value="Graphic Designer">Graphic Designer</option>
+                      <option value="Content Writter">Content Writter</option>
+                      <option value="Video Editor">Video Editor</option>
+                      <option value="Public Relation">Public Relation</option>
+                      <option value="Web Developer">Web Developer</option>
+                    </select>
+                  </div>
+
+                  <div className="onboarding-action-row">
+                    <button className="onboarding-btn secondary" onClick={() => setShowAddInOnboarding(false)}>Back to List</button>
+                    <button 
+                      className="onboarding-btn primary" 
+                      onClick={handleCreateAndClaimProfile}
+                    >
+                      Register & Claim
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
