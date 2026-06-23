@@ -209,6 +209,8 @@ function App() {
 
   // Calculate tasks completed dynamically for a member
   const getTasksCountForMember = (memberName) => {
+    if (!memberName) return 0
+    const targetName = memberName.trim().toLowerCase()
     let count = 0
     events.forEach(ev => {
       // Only count if the event is marked as completed
@@ -216,7 +218,7 @@ function App() {
         const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev']
         domains.forEach(d => {
           if (ev[d] && Array.isArray(ev[d])) {
-            const isAssigned = ev[d].some(p => p.name === memberName)
+            const isAssigned = ev[d].some(p => p.name && p.name.trim().toLowerCase() === targetName)
             if (isAssigned) {
               count++
             }
@@ -229,23 +231,27 @@ function App() {
 
   // Personal Dashboard calculations
   const getContributionRank = (memberName) => {
+    if (!memberName) return 'N/A'
+    const targetName = memberName.trim().toLowerCase()
     const activeM = members.filter(m => m.year === '1st Year' || m.year === '2nd Year')
     const sorted = activeM.map(m => ({
       name: m.name,
       tasks: (m.completed || 0) + getTasksCountForMember(m.name)
     })).sort((a, b) => b.tasks - a.tasks)
 
-    const rankIdx = sorted.findIndex(m => m.name === memberName)
+    const rankIdx = sorted.findIndex(m => m.name && m.name.trim().toLowerCase() === targetName)
     return rankIdx !== -1 ? `#${rankIdx + 1}` : 'N/A'
   }
 
   const getUserRecentAssignments = (memberName) => {
+    if (!memberName) return []
+    const targetName = memberName.trim().toLowerCase()
     const userEvents = []
     events.forEach(ev => {
       const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev']
       domains.forEach(d => {
         if (ev[d] && Array.isArray(ev[d])) {
-          const matched = ev[d].find(p => p.name === memberName)
+          const matched = ev[d].find(p => p.name && p.name.trim().toLowerCase() === targetName)
           if (matched) {
             userEvents.push({
               id: ev.id,
