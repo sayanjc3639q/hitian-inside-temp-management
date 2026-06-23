@@ -401,6 +401,44 @@ function App() {
     }
   }
 
+  const isCurrentUserAdmin = currentUserProfile && (
+    currentUserProfile.year === '3rd Year' || 
+    currentUserProfile.year === '4th Year' || 
+    session?.user?.email === 'jcsayan7@gmail.com'
+  )
+
+  const handleToggleEventStatus = async (eventId, currentVal) => {
+    try {
+      const { error } = await supabase
+        .from('events')
+        .update({ completed: !currentVal })
+        .eq('id', eventId)
+      
+      if (error) throw error
+      
+      setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, completed: !currentVal } : ev))
+      setToastMessage("Event status updated!")
+    } catch (err) {
+      alert("Error updating event status: " + err.message)
+    }
+  }
+
+  const handleToggleCanEdit = async (memberId, currentVal) => {
+    try {
+      const { error } = await supabase
+        .from('members')
+        .update({ can_edit: !currentVal })
+        .eq('id', memberId)
+      
+      if (error) throw error
+      
+      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, can_edit: !currentVal } : m))
+      setToastMessage("Permission updated successfully!")
+    } catch (err) {
+      alert("Error updating permissions: " + err.message)
+    }
+  }
+
   const handleDeleteMember = async (id, name) => {
     if (!confirm(`Are you sure you want to delete member ${name}?`)) return
     try {
@@ -459,6 +497,7 @@ function App() {
                         <th>EVENT ID</th>
                         <th>EVENT NAME</th>
                         <th>DATE</th>
+                        <th>STATUS</th>
                         <th>PHOTOGRAPHER</th>
                         <th>GRAPHIC DESIGNER</th>
                         <th>CONTENT WRITTER</th>
@@ -472,7 +511,7 @@ function App() {
                     <tbody>
                       {filteredEvents.length === 0 ? (
                         <tr>
-                          <td colSpan={11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
+                          <td colSpan={12} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: '500' }}>
                             No data to show
                           </td>
                         </tr>
@@ -482,6 +521,16 @@ function App() {
                             <td className="highlight-cell">{ev.id}</td>
                             <td style={{ fontWeight: '600' }}>{ev.name}</td>
                             <td style={{ whiteSpace: 'nowrap' }}>{formatDateToDisplay(ev.date) || 'No Date'}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={ev.completed || false} 
+                                onChange={() => handleToggleEventStatus(ev.id, ev.completed)}
+                                className="status-toggle-checkbox"
+                                style={{ cursor: 'pointer' }}
+                                title={ev.completed ? "Mark Event in progress" : "Mark Event completed"}
+                              />
+                            </td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'photographer')}>{renderPersonnel(ev.photographer, true)}</td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'graphic')}>{renderPersonnel(ev.graphic, true)}</td>
                             <td className="clickable-cell" onClick={() => openCellEditor(ev.id, 'writer')}>{renderPersonnel(ev.writer, true)}</td>
@@ -539,6 +588,18 @@ function App() {
                         </div>
                       </div>
                       <h3 className="mobile-event-title">{ev.name}</h3>
+                      <div className="mobile-event-status-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+                        <span style={{ fontWeight: '700', color: ev.completed ? 'green' : 'var(--text-muted)' }}>
+                          {ev.completed ? '● Completed' : '○ In Progress'}
+                        </span>
+                        <input 
+                          type="checkbox" 
+                          checked={ev.completed || false} 
+                          onChange={() => handleToggleEventStatus(ev.id, ev.completed)}
+                          className="status-toggle-checkbox"
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </div>
                       <div className="mobile-event-assignments">
                         {pContent && (
                           <div className="assignment-row">
@@ -746,13 +807,14 @@ function App() {
                     <th>YEAR</th>
                     <th>DOMAIN</th>
                     <th>TASKS COMPLETED</th>
+                    <th>CAN EDIT</th>
                     <th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                         No operational members to show
                       </td>
                     </tr>
@@ -768,6 +830,15 @@ function App() {
                         </td>
                         <td style={{ fontWeight: '800', color: 'var(--maroon-accent)', paddingLeft: '2.5rem' }}>
                           {(member.completed || 0) + getTasksCountForMember(member.name)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={member.can_edit || false} 
+                            disabled={!isCurrentUserAdmin}
+                            onChange={() => handleToggleCanEdit(member.id, member.can_edit)}
+                            style={{ cursor: isCurrentUserAdmin ? 'pointer' : 'not-allowed' }}
+                          />
                         </td>
                         <td>
                           <button className="remove-assignee-btn" style={{ margin: '0 auto' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
@@ -933,32 +1004,106 @@ function App() {
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0, fontWeight: '500' }}>No data to show</p>
                 </div>
               ) : (
-                filteredMembers.map((member, idx) => (
-                  <div className="mobile-event-card" key={member.id || idx}>
-                    <div className="mobile-event-card-header">
-                      <span className="mobile-event-id">{member.year}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        {(member.year === '1st Year' || member.year === '2nd Year') && (
-                          <span className="mobile-event-date" style={{ fontWeight: '800', color: 'var(--maroon-accent)' }}>
-                            {(member.completed || 0) + getTasksCountForMember(member.name)} Tasks Done
-                          </span>
-                        )}
-                        <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                <>
+                  {/* 1st & 2nd Year Section */}
+                  {(memberYearFilter === 'All' || memberYearFilter === '1st Year' || memberYearFilter === '2nd Year') && activeMembers.length > 0 && (
+                    <div style={{ marginBottom: '2rem' }}>
+                      <h4 style={{ color: 'var(--maroon-primary)', fontSize: '0.95rem', fontWeight: '800', marginBottom: '0.75rem', borderBottom: '1px solid var(--cream-accent)', paddingBottom: '0.25rem' }}>
+                        Active Members (1st & 2nd Year)
+                      </h4>
+                      {activeMembers.map((member, idx) => (
+                        <div className="mobile-event-card" key={member.id || idx}>
+                          <div className="mobile-event-card-header">
+                            <span className="mobile-event-id">{member.year}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                              <span className="mobile-event-date" style={{ fontWeight: '800', color: 'var(--maroon-accent)' }}>
+                                {(member.completed || 0) + getTasksCountForMember(member.name)} Tasks Done
+                              </span>
+                              <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                          <h3 className="mobile-event-title">{member.name}</h3>
+                          <div className="mobile-event-assignments">
+                            <div className="assignment-row">
+                              <span className="assignment-label">Domain</span>
+                              <span className="person-badge assigned" style={{ alignSelf: 'flex-start' }}>
+                                {member.domain}
+                              </span>
+                            </div>
+                            <div className="assignment-row" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span className="assignment-label">Can Edit</span>
+                              <input 
+                                type="checkbox"
+                                checked={member.can_edit || false}
+                                disabled={!isCurrentUserAdmin}
+                                onChange={() => handleToggleCanEdit(member.id, member.can_edit)}
+                                style={{ cursor: isCurrentUserAdmin ? 'pointer' : 'not-allowed' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <h3 className="mobile-event-title">{member.name}</h3>
-                    <div className="mobile-event-assignments">
-                      <div className="assignment-row">
-                        <span className="assignment-label">Domain</span>
-                        <span className="person-badge assigned" style={{ alignSelf: 'flex-start' }}>
-                          {member.domain}
-                        </span>
-                      </div>
+                  )}
+
+                  {/* 3rd Year Section */}
+                  {(memberYearFilter === 'All' || memberYearFilter === '3rd Year') && seniors.length > 0 && (
+                    <div style={{ marginBottom: '2rem' }}>
+                      <h4 style={{ color: 'var(--maroon-accent)', fontSize: '0.95rem', fontWeight: '800', marginBottom: '0.75rem', borderBottom: '1px solid var(--cream-accent)', paddingBottom: '0.25rem' }}>
+                        Domain Seniors (3rd Year)
+                      </h4>
+                      {seniors.map((member, idx) => (
+                        <div className="mobile-event-card" key={member.id || idx}>
+                          <div className="mobile-event-card-header">
+                            <span className="mobile-event-id">{member.year}</span>
+                            <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <h3 className="mobile-event-title">{member.name}</h3>
+                          <div className="mobile-event-assignments">
+                            <div className="assignment-row">
+                              <span className="assignment-label">Domain</span>
+                              <span className="person-badge assigned" style={{ alignSelf: 'flex-start', backgroundColor: 'var(--cream-accent)', color: 'var(--text-dark)', fontWeight: '600' }}>
+                                {member.domain}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))
+                  )}
+
+                  {/* 4th Year Section */}
+                  {(memberYearFilter === 'All' || memberYearFilter === '4th Year') && heads.length > 0 && (
+                    <div style={{ marginBottom: '2rem' }}>
+                      <h4 style={{ color: 'var(--maroon-primary)', fontSize: '0.95rem', fontWeight: '800', marginBottom: '0.75rem', borderBottom: '1px solid var(--cream-accent)', paddingBottom: '0.25rem' }}>
+                        Domain Heads (4th Year)
+                      </h4>
+                      {heads.map((member, idx) => (
+                        <div className="mobile-event-card" key={member.id || idx}>
+                          <div className="mobile-event-card-header">
+                            <span className="mobile-event-id">{member.year}</span>
+                            <button className="remove-assignee-btn" style={{ padding: '0.2rem' }} onClick={() => handleDeleteMember(member.id, member.name)} title="Delete Member">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <h3 className="mobile-event-title">{member.name}</h3>
+                          <div className="mobile-event-assignments">
+                            <div className="assignment-row">
+                              <span className="assignment-label">Domain</span>
+                              <span className="person-badge assigned" style={{ alignSelf: 'flex-start', background: 'linear-gradient(135deg, var(--maroon-primary), var(--maroon-accent))', color: 'var(--text-light)', fontWeight: '700' }}>
+                                {member.domain}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
