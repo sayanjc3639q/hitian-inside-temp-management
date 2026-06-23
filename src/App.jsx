@@ -83,37 +83,6 @@ function App() {
   const [events, setEvents] = useState([])
   const [members, setMembers] = useState([])
 
-  // Dev bypass handlers
-  const handleDevBypassAsNew = () => {
-    const mockUser = {
-      id: 'mock-' + Math.random().toString(36).substring(2, 11),
-      email: 'new-dev-user@example.com'
-    }
-    const mockSession = { user: mockUser }
-    setSession(mockSession)
-    setCurrentUserProfile(null)
-    setOnboardingStep(1)
-    setAuthLoading(false)
-  }
-
-  const handleDevBypassAsExisting = (memberName) => {
-    const matchedMember = members.find(m => m.name === memberName)
-    if (!matchedMember) return
-    const mockUser = {
-      id: matchedMember.user_id || 'mock-' + Math.random().toString(36).substring(2, 11),
-      email: `${matchedMember.name.toLowerCase().replace(/\s+/g, '')}@example.com`
-    }
-    const mockSession = { user: mockUser }
-    
-    setSession(mockSession)
-    setCurrentUserProfile({
-      ...matchedMember,
-      user_id: mockUser.id
-    })
-    setOnboardingStep(0)
-    setAuthLoading(false)
-  }
-
   // Google OAuth Logins
   const handleGoogleLogin = async () => {
     try {
@@ -134,15 +103,8 @@ function App() {
   const handleSignOut = async () => {
     try {
       setAuthLoading(true)
-      if (session && session.user.id.startsWith('mock-')) {
-        setSession(null)
-        setCurrentUserProfile(null)
-        setOnboardingStep(0)
-        setAuthLoading(false)
-      } else {
-        const { error } = await supabase.auth.signOut()
-        if (error) throw error
-      }
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
     } catch (err) {
       alert('Sign out error: ' + err.message)
       setAuthLoading(false)
@@ -338,30 +300,22 @@ function App() {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      if (session && !session.user.id.startsWith('mock-')) {
+      if (session) {
         checkUserClaims(session.user)
-      } else if (!session) {
+      } else {
         setAuthLoading(false)
       }
     })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
       if (session) {
-        setSession(session)
-        if (!session.user.id.startsWith('mock-')) {
-          checkUserClaims(session.user)
-        }
+        checkUserClaims(session.user)
       } else {
-        setSession(prev => {
-          if (prev && prev.user.id.startsWith('mock-')) {
-            return prev
-          }
-          setCurrentUserProfile(null)
-          setOnboardingStep(0)
-          setAuthLoading(false)
-          return null
-        })
+        setCurrentUserProfile(null)
+        setOnboardingStep(0)
+        setAuthLoading(false)
       }
     })
 
@@ -1124,7 +1078,6 @@ function App() {
             Operations Management Platform.<br />
             Sign in with Google OAuth to access your team workspace.
           </p>
-
           <button className="google-login-btn" onClick={handleGoogleLogin}>
             <svg className="google-icon" viewBox="0 0 24 24">
               <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.48 14.99 1 12 1 7.28 1 3.25 3.75 1.25 7.77l3.92 3.04c.93-2.8 3.54-4.77 6.83-4.77z"/>
@@ -1134,35 +1087,6 @@ function App() {
             </svg>
             Sign in with Google
           </button>
-
-          {/* Dev / Guest Bypass Area */}
-          <div className="dev-bypass-section">
-            <div className="dev-bypass-title">Developer / Offline Bypass</div>
-            
-            <button className="dev-bypass-btn" style={{ marginBottom: '0.75rem' }} onClick={handleDevBypassAsNew}>
-              🔑 Simulate Login as New User (Test Onboarding)
-            </button>
-
-            {members.length > 0 && (
-              <>
-                <div style={{ fontSize: '0.75rem', opacity: '0.6', marginBottom: '0.25rem' }}>Or choose an existing member:</div>
-                <select 
-                  className="dev-bypass-select"
-                  defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      handleDevBypassAsExisting(e.target.value)
-                    }
-                  }}
-                >
-                  <option value="" disabled>-- Select Member --</option>
-                  {members.map((m, idx) => (
-                    <option key={idx} value={m.name}>{m.name} ({m.year} - {m.domain})</option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
         </div>
       </div>
     )
