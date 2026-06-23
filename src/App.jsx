@@ -1149,13 +1149,15 @@ function App() {
                 Sign in with Google
               </button>
               
-              <div style={{ marginTop: '2rem', fontSize: '0.85rem', opacity: '0.7' }}>
-                <span 
-                  style={{ textDecoration: 'underline', cursor: 'pointer', color: 'rgba(255,255,255,0.8)' }}
-                  onClick={() => setShowPrivacyModal(true)}
+              <div style={{ marginTop: '2rem', fontSize: '0.85rem' }}>
+                <a 
+                  href="/privacy.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'underline', color: 'rgba(255,255,255,0.85)', fontWeight: '600' }}
                 >
                   Privacy Policy
-                </span>
+                </a>
               </div>
             </div>
           </div>
@@ -1387,8 +1389,16 @@ function App() {
         </ul>
 
         <div className="sidebar-footer">
-          <div className="footer-system-label" style={{ cursor: 'pointer', textDecoration: 'underline', marginBottom: '0.5rem' }} onClick={() => setShowPrivacyModal(true)}>
-            PRIVACY POLICY
+          <div style={{ marginBottom: '0.5rem' }}>
+            <a 
+              href="/privacy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="footer-system-label"
+              style={{ textDecoration: 'underline', color: 'inherit', display: 'inline-block' }}
+            >
+              PRIVACY POLICY
+            </a>
           </div>
           <div className="footer-system-label">OPERATIONS CONTROL</div>
           <div className="footer-system-val">V2.0.0 ACTIVE</div>
