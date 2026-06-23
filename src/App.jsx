@@ -286,6 +286,7 @@ function App() {
       }
     } catch (err) {
       console.error('Error checking user claims:', err.message)
+      alert('Error checking user claims: ' + err.message + '\n\nIMPORTANT: Please ensure you ran the SQL migration to add the "user_id" column to the "members" table in your Supabase SQL Editor:\nALTER TABLE public.members ADD COLUMN IF NOT EXISTS user_id UUID UNIQUE DEFAULT NULL;')
     } finally {
       setAuthLoading(false)
     }
