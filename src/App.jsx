@@ -211,15 +211,18 @@ function App() {
   const getTasksCountForMember = (memberName) => {
     let count = 0
     events.forEach(ev => {
-      const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev']
-      domains.forEach(d => {
-        if (ev[d] && Array.isArray(ev[d])) {
-          const isAssigned = ev[d].some(p => p.name === memberName)
-          if (isAssigned) {
-            count++
+      // Only count if the event is marked as completed
+      if (ev.completed) {
+        const domains = ['photographer', 'graphic', 'writer', 'videographer', 'editor', 'pr', 'dev']
+        domains.forEach(d => {
+          if (ev[d] && Array.isArray(ev[d])) {
+            const isAssigned = ev[d].some(p => p.name === memberName)
+            if (isAssigned) {
+              count++
+            }
           }
-        }
-      })
+        })
+      }
     })
     return count
   }
