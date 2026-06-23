@@ -593,12 +593,13 @@ function App() {
       }
       case 'DASHBOARD': {
         const totalEvents = events.length;
-        const totalMembers = members.length;
-        const totalTasksCompleted = members.reduce((acc, m) => acc + (m.completed || 0) + getTasksCountForMember(m.name), 0);
+        const operationalMembers = members.filter(m => m.year === '1st Year' || m.year === '2nd Year');
+        const totalMembers = operationalMembers.length;
+        const totalTasksCompleted = operationalMembers.reduce((acc, m) => acc + (m.completed || 0) + getTasksCountForMember(m.name), 0);
 
         let topMem = null;
         let topCount = -1;
-        members.forEach(m => {
+        operationalMembers.forEach(m => {
           const score = (m.completed || 0) + getTasksCountForMember(m.name);
           if (score > topCount && score > 0) {
             topCount = score;
@@ -608,7 +609,7 @@ function App() {
         const topPerformer = topMem ? `${topMem} (${topCount} Tasks)` : 'No tasks assigned';
 
         // Domain-specific data
-        const domainMembers = members.filter(m => m.domain === dashboardDomain);
+        const domainMembers = operationalMembers.filter(m => m.domain === dashboardDomain);
         const sortedDomainMembers = domainMembers.map(m => {
           const tasks = (m.completed || 0) + getTasksCountForMember(m.name);
           return { name: m.name, tasks };
@@ -1090,32 +1091,73 @@ function App() {
   if (!session) {
     return (
       <div className="auth-page-container">
-        <div className="auth-glass-card">
-          <div className="auth-logo">
-            <User size={36} />
+        <div className="auth-split-layout">
+          {/* Left Section: Information about the app (No login needed) */}
+          <div className="auth-info-section">
+            <div className="info-brand-header">
+              <img 
+                src="https://i.pinimg.com/736x/8f/ee/e8/8feee89e30a4018e9255f60e6e2a7eae.jpg" 
+                alt="Hitian Inside Logo" 
+                className="info-brand-logo"
+              />
+              <span className="info-brand-title">Hitian Inside</span>
+            </div>
+            
+            <h2 className="info-main-title">Hitian Inside Management</h2>
+            <p className="info-tagline">
+              The central operations, events, and performance tracking platform for the Hitian Inside club.
+            </p>
+
+            <div className="info-features-grid">
+              <div className="info-feature-card">
+                <h4>Event Coordination</h4>
+                <p>Manage scheduling, operational roles, photographer/writer/designer assignments, and workflows for upcoming match streams and community events.</p>
+              </div>
+              <div className="info-feature-card">
+                <h4>Performance Sheets</h4>
+                <p>Track contribution history, task volumes, and completion rankings dynamically with clean, sortable spreadsheets.</p>
+              </div>
+              <div className="info-feature-card">
+                <h4>Domain Analytics</h4>
+                <p>Visualize operational workload and team capacities across photography, graphics, content writing, PR, and dev domains.</p>
+              </div>
+            </div>
           </div>
-          <h1 className="auth-title">Hitian Inside</h1>
-          <p className="auth-subtitle">
-            Operations Management Platform.<br />
-            Sign in with Google OAuth to access your team workspace.
-          </p>
-          <button className="google-login-btn" onClick={handleGoogleLogin}>
-            <svg className="google-icon" viewBox="0 0 24 24">
-              <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.48 14.99 1 12 1 7.28 1 3.25 3.75 1.25 7.77l3.92 3.04c.93-2.8 3.54-4.77 6.83-4.77z"/>
-              <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.4 3.58v2.98h3.86c2.26-2.09 3.57-5.17 3.57-8.71z"/>
-              <path fill="#FBBC05" d="M5.17 14.77c-.24-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27L1.25 7.19C.45 8.79 0 10.59 0 12.5s.45 3.71 1.25 5.31l3.92-3.04z"/>
-              <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.86-2.98c-1.08.72-2.45 1.15-4.1 1.15-3.29 0-5.9-1.97-6.83-4.77l-3.92 3.04C3.25 20.25 7.28 23 12 23z"/>
-            </svg>
-            Sign in with Google
-          </button>
-          
-          <div style={{ marginTop: '2rem', fontSize: '0.85rem', opacity: '0.7' }}>
-            <span 
-              style={{ textDecoration: 'underline', cursor: 'pointer', color: 'rgba(255,255,255,0.8)' }}
-              onClick={() => setShowPrivacyModal(true)}
-            >
-              Privacy Policy
-            </span>
+
+          {/* Right Section: Glassmorphic Auth card */}
+          <div className="auth-card-section">
+            <div className="auth-glass-card">
+              <div className="auth-logo" style={{ overflow: 'hidden' }}>
+                <img 
+                  src="https://i.pinimg.com/736x/8f/ee/e8/8feee89e30a4018e9255f60e6e2a7eae.jpg" 
+                  alt="App Logo" 
+                  style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                />
+              </div>
+              <h1 className="auth-title">Sign In</h1>
+              <p className="auth-subtitle">
+                Welcome to Hitian Inside Management.<br />
+                Use your registered Google account to access your workspace.
+              </p>
+              <button className="google-login-btn" onClick={handleGoogleLogin}>
+                <svg className="google-icon" viewBox="0 0 24 24">
+                  <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.48 14.99 1 12 1 7.28 1 3.25 3.75 1.25 7.77l3.92 3.04c.93-2.8 3.54-4.77 6.83-4.77z"/>
+                  <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.4 3.58v2.98h3.86c2.26-2.09 3.57-5.17 3.57-8.71z"/>
+                  <path fill="#FBBC05" d="M5.17 14.77c-.24-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27L1.25 7.19C.45 8.79 0 10.59 0 12.5s.45 3.71 1.25 5.31l3.92-3.04z"/>
+                  <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.86-2.98c-1.08.72-2.45 1.15-4.1 1.15-3.29 0-5.9-1.97-6.83-4.77l-3.92 3.04C3.25 20.25 7.28 23 12 23z"/>
+                </svg>
+                Sign in with Google
+              </button>
+              
+              <div style={{ marginTop: '2rem', fontSize: '0.85rem', opacity: '0.7' }}>
+                <span 
+                  style={{ textDecoration: 'underline', cursor: 'pointer', color: 'rgba(255,255,255,0.8)' }}
+                  onClick={() => setShowPrivacyModal(true)}
+                >
+                  Privacy Policy
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
